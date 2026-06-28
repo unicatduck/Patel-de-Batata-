@@ -56,16 +56,35 @@ jobs:
         env:
           EXPO_NO_TELEMETRY: 1
 
-      - name: Incluir bundle JS no APK
-        run: echo "bundleInDebug=true" >> android/gradle.properties
+      - name: Garantir que release usa debug keystore (APK de teste)
+        run: |
+          python3 << 'PYEOF'
+          import re
+          path = 'android/app/build.gradle'
+          with open(path) as f:
+              content = f.read()
+          # Se o bloco release não tiver signingConfig, adiciona o debug keystore
+          release_match = re.search(r'release\s*\{([^}]*)\}', content, re.DOTALL)
+          if release_match and 'signingConfig' not in release_match.group(1):
+              content = content.replace(
+                  'release {',
+                  'release {\n            signingConfig signingConfigs.debug',
+                  1
+              )
+              with open(path, 'w') as f:
+                  f.write(content)
+              print('signingConfig adicionado ao release')
+          else:
+              print('signingConfig já existe – nada a fazer')
+          PYEOF
 
       - name: Permissão ao Gradle wrapper
         run: chmod +x android/gradlew
 
-      - name: Compilar APK
+      - name: Compilar APK release (bundle JS com dev=false)
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
         env:
           JAVA_HOME: ${{ env.JAVA_HOME }}
 
@@ -73,5 +92,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PatelDeBatata-${{ github.run_number }}
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
