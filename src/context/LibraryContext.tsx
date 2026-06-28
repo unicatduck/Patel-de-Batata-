@@ -1,0 +1,384 @@
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+import * as MediaLibrary from 'expo-media-library';
+import { Playlist, RenameEntry, Song } from '../types';
+import { parseFilename } from '../utils/format';
+import { generateId, KEYS, loadJSON, saveJSON } from '../utils/storage';
+
+interface LibraryContextType {
+  songs: Song[];
+  playlists: Playlist[];
+  renameMap: Record<string, RenameEntry>;
+  recentlyPlayed: string[];
+  playHistory: string[];
+  isLoading: boolean;
+  permissionGranted: boolean;
+
+  scanLibrary: () => Promise<void>;
+  getDisplayInfo: (song: Song) => { title: string; artist: string };
+  getSongById: (id: string) => Song | undefined;
+  getPlaylistById: (id: string) => Playlist | undefined;
+  getArtists: () => string[];
+  getSongsByArtist: (artist: string) => Song[];
+  searchSongs: (query: string) => Song[];
+
+  createPlaylist: (name: string, songIds?: string[], description?: string) => Promise<Playlist>;
+  deletePlaylist: (id: string) => Promise<void>;
+  updatePlaylist: (id: string, updates: Partial<Pick<Playlist, 'name' | 'description'>>) => Promise<void>;
+  addSongsToPlaylist: (playlistId: string, songIds: string[]) => Promise<void>;
+  removeSongFromPlaylist: (playlistId: string, songId: string) => Promise<void>;
+  createArtistPlaylists: () => Promise<void>;
+
+  renameSong: (songId: string, displayTitle: string, displayArtist?: string) => Promise<void>;
+  getSongsNeedingRename: () => Song[];
+
+  addToRecentlyPlayed: (songId: string) => Promise<void>;
+  addToPlayHistory: (songId: string) => Promise<void>;
+}
+
+const LibraryContext = createContext<LibraryContextType | null>(null);
+
+export function LibraryProvider({ children }: { children: React.ReactNode }) {
+  const [songs, setSongs] = useState<Song[]>([]);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [renameMap, setRenameMap] = useState<Record<string, RenameEntry>>({});
+  const [recentlyPlayed, setRecentlyPlayed] = useState<string[]>([]);
+  const [playHistory, setPlayHistory] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [permissionGranted, setPermissionGranted] = useState(false);
+  const songsRef = useRef<Song[]>([]);
+
+  useEffect(() => {
+    songsRef.current = songs;
+  }, [songs]);
+
+  // Bootstrap: load stored data then scan
+  useEffect(() => {
+    const init = async () => {
+      const [storedPlaylists, storedRenameMap, storedRecent, storedHistory] = await Promise.all([
+        loadJSON<Playlist[]>(KEYS.PLAYLISTS, []),
+        loadJSON<Record<string, RenameEntry>>(KEYS.RENAME_MAP, {}),
+        loadJSON<string[]>(KEYS.RECENTLY_PLAYED, []),
+        loadJSON<string[]>(KEYS.PLAY_HISTORY, []),
+      ]);
+      setPlaylists(storedPlaylists);
+      setRenameMap(storedRenameMap);
+      setRecentlyPlayed(storedRecent);
+      setPlayHistory(storedHistory);
+      await scanLibrary();
+    };
+    init();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const scanLibrary = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        setPermissionGranted(false);
+        setIsLoading(false);
+        return;
+      }
+      setPermissionGranted(true);
+
+      const result: Song[] = [];
+      let after: string | undefined;
+      let hasMore = true;
+
+      while (hasMore) {
+        const page = await MediaLibrary.getAssetsAsync({
+          mediaType: MediaLibrary.MediaType.audio,
+          first: 200,
+          after,
+          sortBy: MediaLibrary.SortBy.default,
+        });
+
+        for (const asset of page.assets) {
+          const parsed = parseFilename(asset.filename);
+          // expo-media-library may expose title/artist on Android
+          const raw = asset as any;
+          const title: string = raw.title ?? parsed.title;
+          const artist: string = raw.artist ?? parsed.artist;
+          const album: string = raw.album ?? 'Desconhecido';
+
+          result.push({
+            id: asset.id,
+            filename: asset.filename,
+            uri: asset.uri,
+            title,
+            artist,
+            album,
+            duration: asset.duration ? asset.duration * 1000 : 0,
+          });
+        }
+
+        hasMore = page.hasNextPage;
+        after = page.endCursor;
+      }
+
+      // Sort by artist then title
+      result.sort((a, b) => {
+        const ac = a.artist.localeCompare(b.artist);
+        return ac !== 0 ? ac : a.title.localeCompare(b.title);
+      });
+
+      setSongs(result);
+    } catch (e) {
+      console.warn('Scan error:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const getDisplayInfo = useCallback(
+    (song: Song): { title: string; artist: string } => {
+      const entry = renameMap[song.id];
+      return {
+        title: entry?.displayTitle ?? song.title,
+        artist: entry?.displayArtist ?? song.artist,
+      };
+    },
+    [renameMap]
+  );
+
+  const getSongById = useCallback(
+    (id: string) => songsRef.current.find(s => s.id === id),
+    []
+  );
+
+  const getPlaylistById = useCallback(
+    (id: string) => playlists.find(p => p.id === id),
+    [playlists]
+  );
+
+  const getArtists = useCallback((): string[] => {
+    const artistSet = new Set<string>();
+    for (const song of songsRef.current) {
+      const { artist } = getDisplayInfo(song);
+      if (artist && artist !== 'Desconhecido') artistSet.add(artist);
+    }
+    return Array.from(artistSet).sort((a, b) => a.localeCompare(b));
+  }, [getDisplayInfo]);
+
+  const getSongsByArtist = useCallback(
+    (artist: string): Song[] =>
+      songsRef.current.filter(s => getDisplayInfo(s).artist === artist),
+    [getDisplayInfo]
+  );
+
+  const searchSongs = useCallback(
+    (query: string): Song[] => {
+      const q = query.toLowerCase().trim();
+      if (!q) return songsRef.current;
+      return songsRef.current.filter(s => {
+        const { title, artist } = getDisplayInfo(s);
+        return (
+          title.toLowerCase().includes(q) ||
+          artist.toLowerCase().includes(q) ||
+          s.album.toLowerCase().includes(q)
+        );
+      });
+    },
+    [getDisplayInfo]
+  );
+
+  // --- Playlists ---
+
+  const savePlaylists = useCallback(async (updated: Playlist[]) => {
+    setPlaylists(updated);
+    await saveJSON(KEYS.PLAYLISTS, updated);
+  }, []);
+
+  const createPlaylist = useCallback(
+    async (name: string, songIds: string[] = [], description?: string): Promise<Playlist> => {
+      const now = Date.now();
+      const playlist: Playlist = {
+        id: generateId(),
+        name,
+        description,
+        songIds,
+        isAutoPlaylist: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await savePlaylists([...playlists, playlist]);
+      return playlist;
+    },
+    [playlists, savePlaylists]
+  );
+
+  const deletePlaylist = useCallback(
+    async (id: string) => {
+      await savePlaylists(playlists.filter(p => p.id !== id));
+    },
+    [playlists, savePlaylists]
+  );
+
+  const updatePlaylist = useCallback(
+    async (id: string, updates: Partial<Pick<Playlist, 'name' | 'description'>>) => {
+      await savePlaylists(
+        playlists.map(p =>
+          p.id === id ? { ...p, ...updates, updatedAt: Date.now() } : p
+        )
+      );
+    },
+    [playlists, savePlaylists]
+  );
+
+  const addSongsToPlaylist = useCallback(
+    async (playlistId: string, songIds: string[]) => {
+      await savePlaylists(
+        playlists.map(p => {
+          if (p.id !== playlistId) return p;
+          const existing = new Set(p.songIds);
+          const merged = [...p.songIds, ...songIds.filter(id => !existing.has(id))];
+          return { ...p, songIds: merged, updatedAt: Date.now() };
+        })
+      );
+    },
+    [playlists, savePlaylists]
+  );
+
+  const removeSongFromPlaylist = useCallback(
+    async (playlistId: string, songId: string) => {
+      await savePlaylists(
+        playlists.map(p =>
+          p.id === playlistId
+            ? { ...p, songIds: p.songIds.filter(id => id !== songId), updatedAt: Date.now() }
+            : p
+        )
+      );
+    },
+    [playlists, savePlaylists]
+  );
+
+  /**
+   * Creates one auto-playlist per artist (skipping artists that already have one).
+   */
+  const createArtistPlaylists = useCallback(async () => {
+    const artists = getArtists();
+    const existing = new Set(
+      playlists
+        .filter(p => p.isAutoPlaylist && p.autoType === 'artist')
+        .map(p => p.autoValue)
+    );
+
+    const newPlaylists: Playlist[] = [];
+    const now = Date.now();
+
+    for (const artist of artists) {
+      if (existing.has(artist)) continue;
+      const artistSongs = getSongsByArtist(artist);
+      if (artistSongs.length === 0) continue;
+      newPlaylists.push({
+        id: generateId(),
+        name: artist,
+        songIds: artistSongs.map(s => s.id),
+        isAutoPlaylist: true,
+        autoType: 'artist',
+        autoValue: artist,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    if (newPlaylists.length > 0) {
+      await savePlaylists([...playlists, ...newPlaylists]);
+    }
+  }, [getArtists, getSongsByArtist, playlists, savePlaylists]);
+
+  // --- Rename ---
+
+  const renameSong = useCallback(
+    async (songId: string, displayTitle: string, displayArtist?: string) => {
+      const updated = {
+        ...renameMap,
+        [songId]: { songId, displayTitle, displayArtist },
+      };
+      setRenameMap(updated);
+      await saveJSON(KEYS.RENAME_MAP, updated);
+    },
+    [renameMap]
+  );
+
+  const getSongsNeedingRename = useCallback((): Song[] => {
+    return songsRef.current.filter(song => {
+      if (renameMap[song.id]) return false; // already renamed
+      const name = song.filename.replace(/\.[^.]+$/, '');
+      // Messy if has leading numbers, underscores, or metadata differs
+      if (/^\d+[\s._-]/.test(name)) return true;
+      if (name.includes('_')) return true;
+      if (song.title !== name && name !== song.title) {
+        // Title from metadata differs from filename
+        return true;
+      }
+      return false;
+    });
+  }, [renameMap]);
+
+  // --- History ---
+
+  const addToRecentlyPlayed = useCallback(
+    async (songId: string) => {
+      const updated = [songId, ...recentlyPlayed.filter(id => id !== songId)].slice(0, 50);
+      setRecentlyPlayed(updated);
+      await saveJSON(KEYS.RECENTLY_PLAYED, updated);
+    },
+    [recentlyPlayed]
+  );
+
+  const addToPlayHistory = useCallback(
+    async (songId: string) => {
+      const updated = [songId, ...playHistory.filter(id => id !== songId)].slice(0, 200);
+      setPlayHistory(updated);
+      await saveJSON(KEYS.PLAY_HISTORY, updated);
+    },
+    [playHistory]
+  );
+
+  return (
+    <LibraryContext.Provider
+      value={{
+        songs,
+        playlists,
+        renameMap,
+        recentlyPlayed,
+        playHistory,
+        isLoading,
+        permissionGranted,
+        scanLibrary,
+        getDisplayInfo,
+        getSongById,
+        getPlaylistById,
+        getArtists,
+        getSongsByArtist,
+        searchSongs,
+        createPlaylist,
+        deletePlaylist,
+        updatePlaylist,
+        addSongsToPlaylist,
+        removeSongFromPlaylist,
+        createArtistPlaylists,
+        renameSong,
+        getSongsNeedingRename,
+        addToRecentlyPlayed,
+        addToPlayHistory,
+      }}
+    >
+      {children}
+    </LibraryContext.Provider>
+  );
+}
+
+export function useLibrary(): LibraryContextType {
+  const ctx = useContext(LibraryContext);
+  if (!ctx) throw new Error('useLibrary must be used inside LibraryProvider');
+  return ctx;
+}
