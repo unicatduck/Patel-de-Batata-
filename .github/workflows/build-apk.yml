@@ -30,16 +30,31 @@ jobs:
       - name: Instalar dependências
         run: npm install
 
+      - name: Corrigir ExpoModulesCorePlugin para AGP 8.3+
+        # 'components.release' (property accessor) foi removido no AGP 8.3+.
+        # Usar findByName() que funciona em todas as versões.
+        run: |
+          python3 << 'PYEOF'
+          path = 'node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle'
+          with open(path) as f:
+              content = f.read()
+          if 'from components.release' not in content:
+              print('Linha não encontrada – nada a fazer')
+          else:
+              # Substituição inline compatível com Groovy: verifica null antes de chamar from
+              content = content.replace(
+                  'from components.release',
+                  'def _rc = project.components.findByName("release"); if (_rc != null) from _rc'
+              )
+              with open(path, 'w') as f:
+                  f.write(content)
+              print('Patch aplicado com sucesso')
+          PYEOF
+
       - name: Gerar projeto Android nativo (expo prebuild)
         run: npx expo prebuild --platform android --clean
         env:
           EXPO_NO_TELEMETRY: 1
-
-      - name: Corrigir AGP para 8.2.2 (components.release removido no AGP 8.3+)
-        run: |
-          sed -i 's/com\.android\.tools\.build:gradle:[0-9.]*/com.android.tools.build:gradle:8.2.2/g' android/build.gradle
-          echo "=== android/build.gradle ==="
-          cat android/build.gradle
 
       - name: Permissão ao Gradle wrapper
         run: chmod +x android/gradlew
