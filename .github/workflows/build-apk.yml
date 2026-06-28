@@ -56,6 +56,9 @@ jobs:
         env:
           EXPO_NO_TELEMETRY: 1
 
+      - name: Incluir bundle JS no APK
+        run: echo "bundleInDebug=true" >> android/gradle.properties
+
       - name: Permissão ao Gradle wrapper
         run: chmod +x android/gradlew
 
