@@ -38,12 +38,13 @@ jobs:
       - name: Build APK na cloud EAS
         id: build
         run: |
+          # stderr (progresso e erros) fica visível no log; stdout (JSON) é capturado
           JSON=$(eas build \
             --platform android \
             --profile preview \
             --non-interactive \
             --wait \
-            --json 2>/dev/null)
+            --json)
           echo "$JSON"
           BUILD_URL=$(echo "$JSON" | python3 -c "
           import sys, json
