@@ -56,22 +56,6 @@ jobs:
         env:
           EXPO_NO_TELEMETRY: 1
 
-      - name: Registar expo-module-gradle-plugin como composite build
-        run: |
-          python3 << 'PYEOF'
-          path = 'android/settings.gradle'
-          with open(path) as f:
-              content = f.read()
-          addon = "\n// Composite build para expor expo-module-gradle-plugin\nincludeBuild('../node_modules/expo-modules-core/android')\n"
-          if 'expo-modules-core' not in content:
-              content = content + addon
-              with open(path, 'w') as f:
-                  f.write(content)
-              print('includeBuild adicionado com sucesso')
-          else:
-              print('Já existe – nada a fazer')
-          PYEOF
-
       - name: Permissão ao Gradle wrapper
         run: chmod +x android/gradlew
 
