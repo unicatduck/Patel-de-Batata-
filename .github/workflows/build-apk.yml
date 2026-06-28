@@ -35,6 +35,12 @@ jobs:
         env:
           EXPO_NO_TELEMETRY: 1
 
+      - name: Corrigir AGP para 8.2.2 (components.release removido no AGP 8.3+)
+        run: |
+          sed -i 's/com\.android\.tools\.build:gradle:[0-9.]*/com.android.tools.build:gradle:8.2.2/g' android/build.gradle
+          echo "=== android/build.gradle ==="
+          cat android/build.gradle
+
       - name: Permissão ao Gradle wrapper
         run: chmod +x android/gradlew
 
