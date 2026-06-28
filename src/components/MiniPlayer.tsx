@@ -30,40 +30,38 @@ export default function MiniPlayer() {
     <TouchableOpacity
       style={styles.container}
       onPress={() => navigation.navigate('Player')}
-      activeOpacity={0.95}
+      activeOpacity={0.92}
     >
-      {/* Progress bar at top */}
-      <View style={styles.progressBar}>
-        <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+      <ArtworkPlaceholder title={title} artist={artist} size={44} borderRadius={RADIUS.md} />
+
+      <View style={styles.info}>
+        <Text style={styles.title} numberOfLines={1}>{title}</Text>
+        <Text style={styles.artist} numberOfLines={1}>{artist}</Text>
       </View>
 
-      <View style={styles.row}>
-        <ArtworkPlaceholder title={title} artist={artist} size={40} borderRadius={RADIUS.sm} />
+      <TouchableOpacity
+        style={styles.playBtn}
+        onPress={e => { e.stopPropagation(); togglePlayPause(); }}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Ionicons
+          name={isPlaying ? 'pause' : 'play'}
+          size={20}
+          color={COLORS.background}
+        />
+      </TouchableOpacity>
 
-        <View style={styles.info}>
-          <Text style={styles.title} numberOfLines={1}>{title}</Text>
-          <Text style={styles.artist} numberOfLines={1}>{artist}</Text>
-        </View>
+      <TouchableOpacity
+        style={styles.nextBtn}
+        onPress={e => { e.stopPropagation(); playNext(); }}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Ionicons name="play-skip-forward" size={20} color={COLORS.textSecondary} />
+      </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.btn}
-          onPress={e => { e.stopPropagation(); togglePlayPause(); }}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons
-            name={isPlaying ? 'pause' : 'play'}
-            size={24}
-            color={COLORS.text}
-          />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.btn}
-          onPress={e => { e.stopPropagation(); playNext(); }}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="play-skip-forward" size={22} color={COLORS.text} />
-        </TouchableOpacity>
+      {/* Progress bar at bottom */}
+      <View style={styles.progressBar}>
+        <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
       </View>
     </TouchableOpacity>
   );
@@ -72,40 +70,60 @@ export default function MiniPlayer() {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: COLORS.surface,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    borderRadius: 0,
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: 2,
-    backgroundColor: COLORS.border,
-  },
-  progressFill: {
-    height: 2,
-    backgroundColor: COLORS.primary,
-  },
-  row: {
+    marginHorizontal: SPACING.sm,
+    marginBottom: SPACING.xs,
+    borderRadius: RADIUS.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.md,
+    paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.sm,
     gap: SPACING.sm,
+    overflow: 'hidden',
+    elevation: 10,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(245,166,35,0.15)',
   },
   info: {
     flex: 1,
-    gap: 1,
+    gap: 2,
   },
   title: {
     color: COLORS.text,
     fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   artist: {
     color: COLORS.textSecondary,
     fontSize: FONT_SIZES.xs,
   },
-  btn: {
+  playBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nextBtn: {
     padding: SPACING.xs,
+  },
+  progressBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: 'rgba(245,166,35,0.15)',
+    borderBottomLeftRadius: RADIUS.lg,
+    borderBottomRightRadius: RADIUS.lg,
+  },
+  progressFill: {
+    height: 3,
+    backgroundColor: COLORS.primary,
+    borderBottomLeftRadius: RADIUS.lg,
   },
 });

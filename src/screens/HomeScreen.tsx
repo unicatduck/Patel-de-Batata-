@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -47,23 +48,29 @@ export default function HomeScreen() {
   return (
     <ScrollView
       style={styles.root}
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + SPACING.md }]}
+      contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={styles.greeting}>Boa música! 🥔</Text>
-      <Text style={styles.headline}>Patel de Batata</Text>
+      {/* Amber gradient header */}
+      <LinearGradient
+        colors={['rgba(245,166,35,0.28)', 'rgba(245,166,35,0.06)', 'transparent']}
+        style={[styles.headerGradient, { paddingTop: insets.top + SPACING.sm }]}
+      >
+        <Text style={styles.greeting}>Boa música! 🥔</Text>
+        <Text style={styles.headline}>Patel de Batata</Text>
 
-      {/* Quick actions */}
-      <View style={styles.quickRow}>
-        <TouchableOpacity style={styles.quickBtn} onPress={handlePlayAll}>
-          <Ionicons name="play" size={20} color={COLORS.background} />
-          <Text style={styles.quickBtnText}>Reproduzir tudo</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.quickBtn, styles.quickBtnSecondary]} onPress={handleShuffleAll}>
-          <Ionicons name="shuffle" size={20} color={COLORS.primary} />
-          <Text style={[styles.quickBtnText, { color: COLORS.primary }]}>Aleatório</Text>
-        </TouchableOpacity>
-      </View>
+        {/* Quick actions */}
+        <View style={styles.quickRow}>
+          <TouchableOpacity style={styles.quickBtn} onPress={handlePlayAll}>
+            <Ionicons name="play" size={20} color={COLORS.background} />
+            <Text style={styles.quickBtnText}>Reproduzir tudo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.quickBtn, styles.quickBtnSecondary]} onPress={handleShuffleAll}>
+            <Ionicons name="shuffle" size={20} color={COLORS.primary} />
+            <Text style={[styles.quickBtnText, { color: COLORS.primary }]}>Aleatório</Text>
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
 
       {/* Recently played */}
       {recentSongs.length > 0 && (
@@ -147,7 +154,7 @@ export default function HomeScreen() {
       {/* Empty state */}
       {songs.length === 0 && (
         <View style={styles.emptyState}>
-          <Ionicons name="musical-notes" size={64} color={COLORS.textTertiary} />
+          <Text style={styles.emptyDuck}>🥔🎧</Text>
           <Text style={styles.emptyTitle}>Sem músicas encontradas</Text>
           <Text style={styles.emptyText}>
             Vai a Biblioteca → toca em «Procurar músicas» para carregar a tua coleção.
@@ -190,10 +197,17 @@ const styles = StyleSheet.create({
   content: {
     paddingBottom: SPACING.xxl + 80,
   },
+  headerGradient: {
+    paddingBottom: SPACING.lg,
+    marginBottom: SPACING.xs,
+  },
   greeting: {
-    color: COLORS.textSecondary,
+    color: COLORS.primaryLight,
     fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
     paddingHorizontal: SPACING.md,
+    marginBottom: 2,
+    letterSpacing: 0.3,
   },
   headline: {
     color: COLORS.text,
@@ -206,7 +220,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: SPACING.sm,
     paddingHorizontal: SPACING.md,
-    marginBottom: SPACING.lg,
   },
   quickBtn: {
     flex: 1,
@@ -216,12 +229,19 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     backgroundColor: COLORS.primary,
     borderRadius: RADIUS.full,
-    paddingVertical: SPACING.sm + 2,
+    paddingVertical: SPACING.sm + 4,
+    elevation: 6,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
   },
   quickBtnSecondary: {
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(245,166,35,0.12)',
     borderWidth: 1.5,
     borderColor: COLORS.primary,
+    elevation: 0,
+    shadowOpacity: 0,
   },
   quickBtnText: {
     color: COLORS.background,
@@ -309,6 +329,9 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.xxl,
     paddingHorizontal: SPACING.xl,
     gap: SPACING.md,
+  },
+  emptyDuck: {
+    fontSize: 56,
   },
   emptyTitle: {
     color: COLORS.text,
