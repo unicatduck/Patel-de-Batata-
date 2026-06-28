@@ -4,6 +4,7 @@ import {
   FlatList,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -33,6 +34,8 @@ export default function SettingsScreen() {
     createArtistPlaylists,
     scanLibrary,
     playlists,
+    showAllAudio,
+    setShowAllAudio,
   } = useLibrary();
 
   const [activeSection, setActiveSection] = useState<'main' | 'rename'>('main');
@@ -224,6 +227,13 @@ export default function SettingsScreen() {
           onPress={() => setActiveSection('rename')}
           badge={songsToRename.length > 0 ? songsToRename.length : undefined}
         />
+        <SettingToggle
+          icon="headset"
+          label="Incluir todos os áudios"
+          subtitle="Mostra tons de chamada, notificações e clipes curtos"
+          value={showAllAudio}
+          onToggle={setShowAllAudio}
+        />
       </SectionBlock>
 
       <SectionBlock title="Sobre">
@@ -278,6 +288,38 @@ function SettingRow({
       )}
       <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
     </TouchableOpacity>
+  );
+}
+
+function SettingToggle({
+  icon,
+  label,
+  subtitle,
+  value,
+  onToggle,
+}: {
+  icon: any;
+  label: string;
+  subtitle?: string;
+  value: boolean;
+  onToggle: (val: boolean) => void;
+}) {
+  return (
+    <View style={styles.settingRow}>
+      <View style={styles.settingIcon}>
+        <Ionicons name={icon} size={20} color={COLORS.primary} />
+      </View>
+      <View style={styles.settingText}>
+        <Text style={styles.settingLabel}>{label}</Text>
+        {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onToggle}
+        trackColor={{ false: COLORS.card, true: COLORS.primary }}
+        thumbColor={COLORS.text}
+      />
+    </View>
   );
 }
 

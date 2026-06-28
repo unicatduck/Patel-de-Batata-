@@ -17,9 +17,15 @@ export function formatDuration(ms: number): string {
  *   "01. Title"
  *   "Title"
  */
+const Y2MATE_PREFIX = /^y2mate(?:com|\.com|_com)?\s*[-–]\s*/i;
+
+export function stripY2Mate(s: string): string {
+  return s.replace(Y2MATE_PREFIX, '').trim();
+}
+
 export function parseFilename(filename: string): { title: string; artist: string } {
-  // Remove file extension
-  const name = filename.replace(/\.[^.]+$/, '').trim();
+  // Remove file extension and strip y2mate prefix
+  const name = stripY2Mate(filename.replace(/\.[^.]+$/, '').trim());
 
   // Pattern: "Something - Something else"
   const dashMatch = name.match(/^(.+?)\s*-\s*(.+)$/);

@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import { Playlist, RenameEntry, Song } from '../types';
-import { parseFilename } from '../utils/format';
+import { parseFilename, stripY2Mate } from '../utils/format';
 import { generateId, KEYS, loadJSON, saveJSON } from '../utils/storage';
 
 interface LibraryContextType {
@@ -19,6 +19,9 @@ interface LibraryContextType {
   playHistory: string[];
   isLoading: boolean;
   permissionGranted: boolean;
+
+  showAllAudio: boolean;
+  setShowAllAudio: (val: boolean) => Promise<void>;
 
   scanLibrary: () => Promise<void>;
   getDisplayInfo: (song: Song) => { title: string; artist: string };
@@ -52,7 +55,9 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const [playHistory, setPlayHistory] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [permissionGranted, setPermissionGranted] = useState(false);
+  const [showAllAudio, setShowAllAudioState] = useState(false);
   const songsRef = useRef<Song[]>([]);
+  const showAllAudioRef = useRef(false);
 
   useEffect(() => {
     songsRef.current = songs;
@@ -61,16 +66,19 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   // Bootstrap: load stored data then scan
   useEffect(() => {
     const init = async () => {
-      const [storedPlaylists, storedRenameMap, storedRecent, storedHistory] = await Promise.all([
+      const [storedPlaylists, storedRenameMap, storedRecent, storedHistory, storedShowAll] = await Promise.all([
         loadJSON<Playlist[]>(KEYS.PLAYLISTS, []),
         loadJSON<Record<string, RenameEntry>>(KEYS.RENAME_MAP, {}),
         loadJSON<string[]>(KEYS.RECENTLY_PLAYED, []),
         loadJSON<string[]>(KEYS.PLAY_HISTORY, []),
+        loadJSON<boolean>(KEYS.SHOW_ALL_AUDIO, false),
       ]);
       setPlaylists(storedPlaylists);
       setRenameMap(storedRenameMap);
       setRecentlyPlayed(storedRecent);
       setPlayHistory(storedHistory);
+      showAllAudioRef.current = storedShowAll;
+      setShowAllAudioState(storedShowAll);
       await scanLibrary();
     };
     init();
@@ -101,12 +109,28 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         });
 
         for (const asset of page.assets) {
+          const raw = asset as any;
+          const durationMs = asset.duration ? asset.duration * 1000 : 0;
+
+          // Music-only filter (skip when showAllAudio is enabled)
+          if (!showAllAudioRef.current) {
+            // Skip very short clips (ringtones, notifications < 30 s)
+            if (durationMs > 0 && durationMs < 30_000) continue;
+            // Skip files in system audio folders
+            const albumName: string = (raw.album ?? '').toLowerCase();
+            const systemFolders = ['ringtones', 'notifications', 'alarms', 'toques', 'notificações', 'alarmes'];
+            if (systemFolders.some(f => albumName.includes(f))) continue;
+          }
+
           const parsed = parseFilename(asset.filename);
           // expo-media-library may expose title/artist on Android
-          const raw = asset as any;
-          const title: string = raw.title ?? parsed.title;
-          const artist: string = raw.artist ?? parsed.artist;
+          const rawTitle: string = raw.title ?? parsed.title;
+          const rawArtist: string = raw.artist ?? parsed.artist;
           const album: string = raw.album ?? 'Desconhecido';
+
+          // Strip y2mate prefix from metadata title if present
+          const title = stripY2Mate(rawTitle);
+          const artist = rawArtist;
 
           result.push({
             id: asset.id,
@@ -115,7 +139,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
             title,
             artist,
             album,
-            duration: asset.duration ? asset.duration * 1000 : 0,
+            duration: durationMs,
           });
         }
 
@@ -137,13 +161,21 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const setShowAllAudio = useCallback(async (val: boolean) => {
+    showAllAudioRef.current = val;
+    setShowAllAudioState(val);
+    await saveJSON(KEYS.SHOW_ALL_AUDIO, val);
+    // Re-scan so the new filter is applied immediately
+    await scanLibrary();
+  }, [scanLibrary]);
+
   const getDisplayInfo = useCallback(
     (song: Song): { title: string; artist: string } => {
       const entry = renameMap[song.id];
-      return {
-        title: entry?.displayTitle ?? song.title,
-        artist: entry?.displayArtist ?? song.artist,
-      };
+      // Strip y2mate prefix from display title (catches metadata not caught at scan time)
+      const title = stripY2Mate(entry?.displayTitle ?? song.title);
+      const artist = entry?.displayArtist ?? song.artist;
+      return { title, artist };
     },
     [renameMap]
   );
@@ -353,6 +385,8 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         playHistory,
         isLoading,
         permissionGranted,
+        showAllAudio,
+        setShowAllAudio,
         scanLibrary,
         getDisplayInfo,
         getSongById,

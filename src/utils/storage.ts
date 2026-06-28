@@ -6,6 +6,7 @@ const KEYS = {
   RECENTLY_PLAYED: '@pdb:recentlyPlayed',
   PLAY_HISTORY: '@pdb:playHistory',
   SETTINGS: '@pdb:settings',
+  SHOW_ALL_AUDIO: '@pdb:showAllAudio',
 };
 
 export { KEYS };
