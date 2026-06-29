@@ -23,10 +23,11 @@ interface Props {
 
 export default function SongItem({ song, queue, onLongPress, showDuration = true, index }: Props) {
   const { playSong, currentSong, isPlaying } = usePlayer();
-  const { getDisplayInfo } = useLibrary();
+  const { getDisplayInfo, isFavorite } = useLibrary();
 
   const { title, artist } = getDisplayInfo(song);
   const isActive = currentSong?.id === song.id;
+  const isFav = isFavorite(song.id);
 
   const handlePress = () => {
     playSong(song, queue);
@@ -54,6 +55,9 @@ export default function SongItem({ song, queue, onLongPress, showDuration = true
       </View>
 
       <View style={styles.right}>
+        {isFav && (
+          <Ionicons name="heart" size={14} color="#FF4D6D" style={styles.favIcon} />
+        )}
         {isActive && (
           <Ionicons
             name={isPlaying ? 'volume-high' : 'pause'}
@@ -101,6 +105,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.xs,
+  },
+  favIcon: {
+    marginRight: 2,
   },
   playIcon: {
     marginRight: 2,

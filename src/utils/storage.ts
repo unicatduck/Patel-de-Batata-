@@ -7,6 +7,7 @@ const KEYS = {
   PLAY_HISTORY: '@pdb:playHistory',
   SETTINGS: '@pdb:settings',
   SHOW_ALL_AUDIO: '@pdb:showAllAudio',
+  FAVORITES: '@pdb:favorites',
 };
 
 export { KEYS };

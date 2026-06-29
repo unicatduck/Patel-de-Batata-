@@ -23,6 +23,10 @@ interface LibraryContextType {
   showAllAudio: boolean;
   setShowAllAudio: (val: boolean) => Promise<void>;
 
+  favorites: Set<string>;
+  toggleFavorite: (songId: string) => Promise<void>;
+  isFavorite: (songId: string) => boolean;
+
   scanLibrary: () => Promise<void>;
   getDisplayInfo: (song: Song) => { title: string; artist: string };
   getSongById: (id: string) => Song | undefined;
@@ -56,6 +60,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [showAllAudio, setShowAllAudioState] = useState(false);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const songsRef = useRef<Song[]>([]);
   const showAllAudioRef = useRef(false);
 
@@ -66,12 +71,13 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   // Bootstrap: load stored data then scan
   useEffect(() => {
     const init = async () => {
-      const [storedPlaylists, storedRenameMap, storedRecent, storedHistory, storedShowAll] = await Promise.all([
+      const [storedPlaylists, storedRenameMap, storedRecent, storedHistory, storedShowAll, storedFavs] = await Promise.all([
         loadJSON<Playlist[]>(KEYS.PLAYLISTS, []),
         loadJSON<Record<string, RenameEntry>>(KEYS.RENAME_MAP, {}),
         loadJSON<string[]>(KEYS.RECENTLY_PLAYED, []),
         loadJSON<string[]>(KEYS.PLAY_HISTORY, []),
         loadJSON<boolean>(KEYS.SHOW_ALL_AUDIO, false),
+        loadJSON<string[]>(KEYS.FAVORITES, []),
       ]);
       setPlaylists(storedPlaylists);
       setRenameMap(storedRenameMap);
@@ -79,6 +85,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       setPlayHistory(storedHistory);
       showAllAudioRef.current = storedShowAll;
       setShowAllAudioState(storedShowAll);
+      setFavorites(new Set(storedFavs));
       await scanLibrary();
     };
     init();
@@ -160,6 +167,21 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     }
   }, []);
+
+  const toggleFavorite = useCallback(async (songId: string) => {
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (next.has(songId)) next.delete(songId);
+      else next.add(songId);
+      saveJSON(KEYS.FAVORITES, Array.from(next));
+      return next;
+    });
+  }, []);
+
+  const isFavorite = useCallback(
+    (songId: string) => favorites.has(songId),
+    [favorites]
+  );
 
   const setShowAllAudio = useCallback(async (val: boolean) => {
     showAllAudioRef.current = val;
@@ -387,6 +409,9 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         permissionGranted,
         showAllAudio,
         setShowAllAudio,
+        favorites,
+        toggleFavorite,
+        isFavorite,
         scanLibrary,
         getDisplayInfo,
         getSongById,

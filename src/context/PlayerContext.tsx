@@ -31,6 +31,8 @@ interface PlayerContextType {
   toggleRepeat: () => void;
   seekTo: (positionMs: number) => Promise<void>;
   addToQueue: (song: Song) => void;
+  volume: number;
+  setVolume: (v: number) => Promise<void>;
 }
 
 const PlayerContext = createContext<PlayerContextType | null>(null);
@@ -48,6 +50,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [volume, setVolumeState] = useState(1.0);
 
   // Keep refs for use inside callbacks
   const currentIndexRef = useRef(currentIndex);
@@ -270,6 +273,14 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     await soundRef.current.setPositionAsync(positionMs);
   }, []);
 
+  const setVolume = useCallback(async (v: number) => {
+    const clamped = Math.min(1, Math.max(0, v));
+    setVolumeState(clamped);
+    if (soundRef.current) {
+      await soundRef.current.setVolumeAsync(clamped);
+    }
+  }, []);
+
   const addToQueue = useCallback((song: Song) => {
     setQueue(prev => {
       const updated = [...prev, song];
@@ -299,6 +310,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         toggleRepeat,
         seekTo,
         addToQueue,
+        volume,
+        setVolume,
       }}
     >
       {children}

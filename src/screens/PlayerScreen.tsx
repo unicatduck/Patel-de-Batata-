@@ -1,10 +1,11 @@
 import React, { useCallback, useRef } from 'react';
 import {
+  Image,
+  LayoutChangeEvent,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  LayoutChangeEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,9 +13,25 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { usePlayer } from '../context/PlayerContext';
 import { useLibrary } from '../context/LibraryContext';
-import ArtworkPlaceholder from '../components/ArtworkPlaceholder';
 import { formatDuration } from '../utils/format';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '../theme';
+
+// Duck images for each player state
+const DUCK_IMAGES = {
+  playing:  require('../../assets/duck-playing.jpg'),
+  paused:   require('../../assets/duck-paused.jpg'),
+  favorite: require('../../assets/duck-favorite.jpg'),
+  repeat:   require('../../assets/duck-repeat.jpg'),
+  loud:     require('../../assets/duck-loud.jpg'),
+} as const;
+
+function getDuckImage(isPlaying: boolean, isFav: boolean, repeatMode: string, volume: number) {
+  if (!isPlaying) return DUCK_IMAGES.paused;
+  if (isFav)     return DUCK_IMAGES.favorite;
+  if (volume > 0.75) return DUCK_IMAGES.loud;
+  if (repeatMode !== 'none') return DUCK_IMAGES.repeat;
+  return DUCK_IMAGES.playing;
+}
 
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
@@ -26,25 +43,27 @@ export default function PlayerScreen() {
     repeatMode,
     position,
     duration,
+    volume,
     togglePlayPause,
     playNext,
     playPrev,
     toggleShuffle,
     toggleRepeat,
     seekTo,
+    setVolume,
   } = usePlayer();
-  const { getDisplayInfo } = useLibrary();
+  const { getDisplayInfo, isFavorite, toggleFavorite } = useLibrary();
 
   const { title, artist } = currentSong
     ? getDisplayInfo(currentSong)
     : { title: '', artist: '' };
 
+  const isFav = currentSong ? isFavorite(currentSong.id) : false;
   const progress = duration > 0 ? position / duration : 0;
+  const duckImage = getDuckImage(isPlaying, isFav, repeatMode, volume);
 
   const handleSeek = useCallback(
-    (pct: number) => {
-      seekTo(Math.floor(pct * duration));
-    },
+    (pct: number) => seekTo(Math.floor(pct * duration)),
     [duration, seekTo]
   );
 
@@ -76,22 +95,22 @@ export default function PlayerScreen() {
           <Text style={styles.headerArtist} numberOfLines={1}>{artist}</Text>
         </View>
         <TouchableOpacity
+          onPress={() => currentSong && toggleFavorite(currentSong.id)}
           style={styles.headerBtn}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Ionicons name="ellipsis-horizontal" size={24} color={COLORS.text} />
+          <Ionicons
+            name={isFav ? 'heart' : 'heart-outline'}
+            size={24}
+            color={isFav ? '#FF4D6D' : COLORS.text}
+          />
         </TouchableOpacity>
       </View>
 
-      {/* Artwork */}
+      {/* Duck artwork */}
       <View style={styles.artworkContainer}>
         <View style={styles.artworkShadow}>
-          <ArtworkPlaceholder
-            title={title}
-            artist={artist}
-            size={290}
-            borderRadius={RADIUS.lg + 4}
-          />
+          <Image source={duckImage} style={styles.duckImage} resizeMode="cover" />
         </View>
       </View>
 
@@ -101,9 +120,9 @@ export default function PlayerScreen() {
         <Text style={styles.artistLabel} numberOfLines={1}>{artist}</Text>
       </View>
 
-      {/* Progress */}
+      {/* Seek bar */}
       <View style={styles.progressSection}>
-        <SeekBar progress={progress} onSeek={handleSeek} />
+        <SliderBar value={progress} onSeek={handleSeek} accentColor={COLORS.primary} />
         <View style={styles.timeRow}>
           <Text style={styles.time}>{formatDuration(position)}</Text>
           <Text style={styles.time}>{formatDuration(duration)}</Text>
@@ -125,11 +144,7 @@ export default function PlayerScreen() {
           <Ionicons name="play-skip-back" size={32} color={COLORS.text} />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={togglePlayPause}
-          style={styles.playBtn}
-          activeOpacity={0.82}
-        >
+        <TouchableOpacity onPress={togglePlayPause} style={styles.playBtn} activeOpacity={0.82}>
           <Ionicons
             name={isPlaying ? 'pause' : 'play'}
             size={38}
@@ -147,22 +162,45 @@ export default function PlayerScreen() {
             size={26}
             color={repeatMode !== 'none' ? COLORS.primary : COLORS.textSecondary}
           />
-          {repeatMode === 'one' && (
-            <Text style={styles.repeatOne}>1</Text>
-          )}
+          {repeatMode === 'one' && <Text style={styles.repeatOne}>1</Text>}
           {repeatMode === 'all' && <View style={styles.dot} />}
         </TouchableOpacity>
+      </View>
+
+      {/* Volume */}
+      <View style={styles.volumeRow}>
+        <Ionicons
+          name={volume === 0 ? 'volume-mute' : volume < 0.4 ? 'volume-low' : 'volume-high'}
+          size={18}
+          color={COLORS.textSecondary}
+        />
+        <View style={styles.volumeSlider}>
+          <SliderBar value={volume} onSeek={setVolume} accentColor={COLORS.textSecondary} thin />
+        </View>
+        <Ionicons name="volume-high" size={18} color={volume > 0.75 ? COLORS.primary : COLORS.textSecondary} />
       </View>
     </LinearGradient>
   );
 }
 
-function SeekBar({ progress, onSeek }: { progress: number; onSeek: (pct: number) => void }) {
+function SliderBar({
+  value,
+  onSeek,
+  accentColor,
+  thin,
+}: {
+  value: number;
+  onSeek: (v: number) => void;
+  accentColor: string;
+  thin?: boolean;
+}) {
   const widthRef = useRef(1);
+  const trackH = thin ? 3 : 5;
+  const thumbSize = thin ? 12 : 17;
 
   return (
     <TouchableOpacity
-      style={styles.seekBar}
+      style={{ paddingVertical: SPACING.sm }}
       activeOpacity={1}
       onLayout={(e: LayoutChangeEvent) => { widthRef.current = e.nativeEvent.layout.width; }}
       onPress={(e) => {
@@ -170,9 +208,26 @@ function SeekBar({ progress, onSeek }: { progress: number; onSeek: (pct: number)
         onSeek(Math.min(1, Math.max(0, x / widthRef.current)));
       }}
     >
-      <View style={styles.seekTrack}>
-        <View style={[styles.seekFill, { width: `${progress * 100}%` }]} />
-        <View style={[styles.seekThumb, { left: `${Math.min(progress * 100, 100)}%` as any }]} />
+      <View style={[styles.seekTrack, { height: trackH, borderRadius: trackH / 2 }]}>
+        <View
+          style={[
+            styles.seekFill,
+            { width: `${Math.min(value * 100, 100)}%`, height: trackH, borderRadius: trackH / 2, backgroundColor: accentColor },
+          ]}
+        />
+        <View
+          style={[
+            styles.seekThumb,
+            {
+              left: `${Math.min(value * 100, 100)}%` as any,
+              width: thumbSize,
+              height: thumbSize,
+              borderRadius: thumbSize / 2,
+              marginLeft: -(thumbSize / 2),
+              top: -(thumbSize / 2 - trackH / 2),
+            },
+          ]}
+        />
       </View>
     </TouchableOpacity>
   );
@@ -219,8 +274,8 @@ const styles = StyleSheet.create({
   },
   artworkContainer: {
     alignItems: 'center',
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.xl,
+    marginTop: SPACING.md,
+    marginBottom: SPACING.lg,
   },
   artworkShadow: {
     elevation: 20,
@@ -230,10 +285,14 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     borderRadius: RADIUS.lg + 4,
   },
+  duckImage: {
+    width: 270,
+    height: 270,
+    borderRadius: RADIUS.lg + 4,
+  },
   songInfo: {
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.md,
     gap: SPACING.xs,
-    alignItems: 'flex-start',
   },
   title: {
     color: COLORS.text,
@@ -247,30 +306,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   progressSection: {
-    marginBottom: SPACING.xl,
-  },
-  seekBar: {
-    paddingVertical: SPACING.sm,
+    marginBottom: SPACING.md,
   },
   seekTrack: {
-    height: 5,
     backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 3,
     position: 'relative',
   },
-  seekFill: {
-    height: 5,
-    backgroundColor: COLORS.primary,
-    borderRadius: 3,
-  },
+  seekFill: {},
   seekThumb: {
     position: 'absolute',
-    top: -6,
-    width: 17,
-    height: 17,
-    borderRadius: 9,
     backgroundColor: COLORS.text,
-    marginLeft: -8,
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -280,7 +325,7 @@ const styles = StyleSheet.create({
   timeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: SPACING.xs,
+    marginTop: -SPACING.xs,
   },
   time: {
     color: COLORS.textSecondary,
@@ -292,6 +337,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.xs,
+    marginBottom: SPACING.lg,
   },
   sideBtn: {
     width: 44,
@@ -325,5 +371,13 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontSize: 10,
     fontWeight: '700',
+  },
+  volumeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  volumeSlider: {
+    flex: 1,
   },
 });
