@@ -29,7 +29,8 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.WAKE_LOCK"
       ]
     },
     "plugins": [
@@ -39,12 +40,6 @@
           "photosPermission": "Patel de Batata precisa de acesso às tuas músicas.",
           "savePhotosPermission": "Permite guardar alterações nos ficheiros de áudio.",
           "isAccessMediaLocationEnabled": true
-        }
-      ],
-      [
-        "expo-av",
-        {
-          "microphonePermission": false
         }
       ]
     ]

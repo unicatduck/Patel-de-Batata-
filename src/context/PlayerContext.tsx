@@ -6,9 +6,18 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Audio, AVPlaybackStatus, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
+import TrackPlayer, {
+  AppKilledPlaybackBehavior,
+  Capability,
+  Event,
+  RepeatMode as TrackRepeatMode,
+  State,
+  useActiveTrack,
+  usePlaybackState,
+  useProgress,
+} from 'react-native-track-player';
 import { RepeatMode, Song } from '../types';
-import { createShuffledQueue, getNextIndex, getPrevIndex } from '../utils/shuffle';
+import { createShuffledQueue } from '../utils/shuffle';
 import { useLibrary } from './LibraryContext';
 
 interface PlayerContextType {
@@ -21,18 +30,29 @@ interface PlayerContextType {
   position: number;
   duration: number;
   isLoading: boolean;
+  volume: number;
 
   playSong: (song: Song, queue?: Song[]) => Promise<void>;
   playQueue: (songs: Song[], startIndex?: number) => Promise<void>;
   togglePlayPause: () => Promise<void>;
   playNext: () => Promise<void>;
   playPrev: () => Promise<void>;
-  toggleShuffle: () => void;
+  toggleShuffle: () => Promise<void>;
   toggleRepeat: () => void;
   seekTo: (positionMs: number) => Promise<void>;
   addToQueue: (song: Song) => void;
-  volume: number;
   setVolume: (v: number) => Promise<void>;
+}
+
+function songToTrack(song: Song) {
+  return {
+    id: song.id,
+    url: song.uri,
+    title: song.title,
+    artist: song.artist,
+    album: song.album,
+    duration: song.duration / 1000,
+  };
 }
 
 const PlayerContext = createContext<PlayerContextType | null>(null);
@@ -40,109 +60,108 @@ const PlayerContext = createContext<PlayerContextType | null>(null);
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const { addToRecentlyPlayed, addToPlayHistory, playHistory } = useLibrary();
 
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const [currentSong, setCurrentSong] = useState<Song | null>(null);
+  // TrackPlayer reactive hooks
+  const progress = useProgress(500);
+  const playbackState = usePlaybackState();
+  const activeTrack = useActiveTrack();
+
+  // App state
   const [queue, setQueue] = useState<Song[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('none');
-  const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [volume, setVolumeState] = useState(1.0);
 
-  // Keep refs for use inside callbacks
-  const currentIndexRef = useRef(currentIndex);
-  const queueRef = useRef(queue);
-  const repeatModeRef = useRef(repeatMode);
-  const isShuffleRef = useRef(isShuffle);
+  // Refs to access current values inside async callbacks without stale closures
+  const queueRef = useRef<Song[]>([]);
+  const currentIndexRef = useRef(0);
+  const isShuffleRef = useRef(false);
   const playHistoryRef = useRef(playHistory);
+  const addToRecentlyPlayedRef = useRef(addToRecentlyPlayed);
+  const addToPlayHistoryRef = useRef(addToPlayHistory);
+  const isSetup = useRef(false);
 
-  useEffect(() => { currentIndexRef.current = currentIndex; }, [currentIndex]);
   useEffect(() => { queueRef.current = queue; }, [queue]);
-  useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
+  useEffect(() => { currentIndexRef.current = currentIndex; }, [currentIndex]);
   useEffect(() => { isShuffleRef.current = isShuffle; }, [isShuffle]);
   useEffect(() => { playHistoryRef.current = playHistory; }, [playHistory]);
+  useEffect(() => { addToRecentlyPlayedRef.current = addToRecentlyPlayed; }, [addToRecentlyPlayed]);
+  useEffect(() => { addToPlayHistoryRef.current = addToPlayHistory; }, [addToPlayHistory]);
 
-  // Configure audio session on mount
+  // Derive values from TrackPlayer hooks
+  const currentSong = activeTrack
+    ? queueRef.current.find(s => s.id === activeTrack.id) ?? null
+    : null;
+
+  const isPlaying = playbackState.state === State.Playing;
+
+  // TrackPlayer uses seconds; our API uses milliseconds throughout
+  const position = Math.floor((progress.position ?? 0) * 1000);
+  const duration = Math.floor((progress.duration ?? 0) * 1000);
+
+  // One-time TrackPlayer setup
   useEffect(() => {
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      staysActiveInBackground: true,
-      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
-      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-      playThroughEarpieceAndroid: false,
-    });
+    if (isSetup.current) return;
+    isSetup.current = true;
 
-    return () => {
-      soundRef.current?.unloadAsync();
-    };
+    (async () => {
+      try {
+        await TrackPlayer.setupPlayer({ maxCacheSize: 1024 * 5 });
+        await TrackPlayer.updateOptions({
+          android: {
+            appKilledPlaybackBehavior:
+              AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
+          },
+          capabilities: [
+            Capability.Play,
+            Capability.Pause,
+            Capability.SkipToNext,
+            Capability.SkipToPrevious,
+            Capability.SeekTo,
+          ],
+          compactCapabilities: [
+            Capability.Play,
+            Capability.Pause,
+            Capability.SkipToNext,
+            Capability.SkipToPrevious,
+          ],
+        });
+      } catch (e) {
+        console.warn('TrackPlayer setup error:', e);
+      }
+    })();
   }, []);
 
-  const onPlaybackStatusUpdate = useCallback(
-    (status: AVPlaybackStatus) => {
-      if (!status.isLoaded) return;
-      setPosition(status.positionMillis ?? 0);
-      setDuration(status.durationMillis ?? 0);
-      setIsPlaying(status.isPlaying);
+  // Record history and sync currentIndex when track auto-advances
+  useEffect(() => {
+    if (!activeTrack) return;
+    addToRecentlyPlayedRef.current(activeTrack.id);
+    addToPlayHistoryRef.current(activeTrack.id);
 
-      if (status.didJustFinish && !status.isLooping) {
-        const idx = currentIndexRef.current;
-        const q = queueRef.current;
-        const next = getNextIndex(idx, q.length, repeatModeRef.current);
-        if (next >= 0) {
-          loadAndPlayIndex(next);
-        } else {
-          setIsPlaying(false);
-          setPosition(0);
-        }
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
+    const idx = queueRef.current.findIndex(s => s.id === activeTrack.id);
+    if (idx >= 0) {
+      setCurrentIndex(idx);
+      currentIndexRef.current = idx;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTrack?.id]);
 
-  const loadAndPlayIndex = useCallback(
-    async (index: number) => {
-      const q = queueRef.current;
-      if (index < 0 || index >= q.length) return;
-
-      const song = q[index];
-      setIsLoading(true);
-
-      try {
-        // Unload previous
-        if (soundRef.current) {
-          await soundRef.current.stopAsync().catch(() => {});
-          await soundRef.current.unloadAsync().catch(() => {});
-          soundRef.current = null;
-        }
-
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: song.uri },
-          { shouldPlay: true, progressUpdateIntervalMillis: 500 },
-          onPlaybackStatusUpdate
-        );
-
-        soundRef.current = sound;
-        setCurrentSong(song);
-        setCurrentIndex(index);
-        setIsPlaying(true);
-        setPosition(0);
-
-        await addToRecentlyPlayed(song.id);
-        await addToPlayHistory(song.id);
-      } catch (e) {
-        console.warn('Load error:', e);
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [addToPlayHistory, addToRecentlyPlayed, onPlaybackStatusUpdate]
-  );
+  const loadQueue = useCallback(async (songs: Song[], startIndex: number) => {
+    setIsLoading(true);
+    try {
+      await TrackPlayer.reset();
+      await TrackPlayer.add(songs.map(songToTrack));
+      await TrackPlayer.skip(startIndex);
+      await TrackPlayer.play();
+      setCurrentIndex(startIndex);
+      currentIndexRef.current = startIndex;
+    } catch (e) {
+      console.warn('Load queue error:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   const playSong = useCallback(
     async (song: Song, incomingQueue?: Song[]) => {
@@ -150,9 +169,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       let finalQueue: Song[];
       let startIndex: number;
 
-      if (isShuffle) {
+      if (isShuffleRef.current) {
         finalQueue = createShuffledQueue(baseQueue, song, playHistoryRef.current);
-        // Put the requested song first
         const songIdx = finalQueue.findIndex(s => s.id === song.id);
         if (songIdx > 0) {
           finalQueue.splice(songIdx, 1);
@@ -167,9 +185,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
       setQueue(finalQueue);
       queueRef.current = finalQueue;
-      await loadAndPlayIndex(startIndex);
+      await loadQueue(finalQueue, startIndex);
     },
-    [isShuffle, loadAndPlayIndex]
+    [loadQueue]
   );
 
   const playQueue = useCallback(
@@ -178,10 +196,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       let finalQueue: Song[];
       let finalIndex: number;
 
-      if (isShuffle) {
+      if (isShuffleRef.current) {
         const songAtStart = songs[startIndex];
         finalQueue = createShuffledQueue(songs, null, playHistoryRef.current);
-        // Keep the requested start song first
         const idx = finalQueue.findIndex(s => s.id === songAtStart?.id);
         if (idx > 0) {
           finalQueue.splice(idx, 1);
@@ -195,96 +212,92 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
       setQueue(finalQueue);
       queueRef.current = finalQueue;
-      await loadAndPlayIndex(finalIndex);
+      await loadQueue(finalQueue, finalIndex);
     },
-    [isShuffle, loadAndPlayIndex]
+    [loadQueue]
   );
 
   const togglePlayPause = useCallback(async () => {
-    if (!soundRef.current) return;
-    const status = await soundRef.current.getStatusAsync();
-    if (!status.isLoaded) return;
-
-    if (status.isPlaying) {
-      await soundRef.current.pauseAsync();
+    const state = await TrackPlayer.getPlaybackState();
+    if (state.state === State.Playing) {
+      await TrackPlayer.pause();
     } else {
-      await soundRef.current.playAsync();
+      await TrackPlayer.play();
     }
   }, []);
 
   const playNext = useCallback(async () => {
-    const next = getNextIndex(currentIndexRef.current, queueRef.current.length, repeatModeRef.current);
-    if (next >= 0) {
-      await loadAndPlayIndex(next);
-    }
-  }, [loadAndPlayIndex]);
+    await TrackPlayer.skipToNext().catch(() => {});
+  }, []);
 
   const playPrev = useCallback(async () => {
-    // If more than 3 seconds in, restart current song
-    if (position > 3000 && soundRef.current) {
-      await soundRef.current.setPositionAsync(0);
-      return;
+    const prog = await TrackPlayer.getProgress();
+    if (prog.position > 3) {
+      await TrackPlayer.seekTo(0);
+    } else {
+      await TrackPlayer.skipToPrevious().catch(() => TrackPlayer.seekTo(0));
     }
-    const prev = getPrevIndex(currentIndexRef.current, queueRef.current.length, repeatModeRef.current);
-    await loadAndPlayIndex(prev);
-  }, [loadAndPlayIndex, position]);
+  }, []);
 
-  const toggleShuffle = useCallback(() => {
-    setIsShuffle(prev => {
-      const next = !prev;
-      isShuffleRef.current = next;
+  const toggleShuffle = useCallback(async () => {
+    const next = !isShuffleRef.current;
+    isShuffleRef.current = next;
+    setIsShuffle(next);
 
-      if (next) {
-        // Reshuffle remaining queue, keeping current song in place
-        const current = queueRef.current[currentIndexRef.current];
-        const remaining = queueRef.current.filter((_, i) => i !== currentIndexRef.current);
-        const shuffled = createShuffledQueue(remaining, current, playHistoryRef.current);
-        const newQueue = [current, ...shuffled];
-        setQueue(newQueue);
-        queueRef.current = newQueue;
-        setCurrentIndex(0);
-        currentIndexRef.current = 0;
-      } else {
-        // Restore linear order would require storing original — for simplicity keep current queue
-        // The user can re-open a playlist to reset to linear
+    if (next && queueRef.current.length > 0) {
+      const current = queueRef.current[currentIndexRef.current];
+      if (!current) return;
+      const remaining = queueRef.current.filter((_, i) => i !== currentIndexRef.current);
+      const shuffled = createShuffledQueue(remaining, current, playHistoryRef.current);
+      const newQueue = [current, ...shuffled];
+      setQueue(newQueue);
+      queueRef.current = newQueue;
+      setCurrentIndex(0);
+      currentIndexRef.current = 0;
+
+      try {
+        const prog = await TrackPlayer.getProgress();
+        await TrackPlayer.reset();
+        await TrackPlayer.add(newQueue.map(songToTrack));
+        await TrackPlayer.skip(0);
+        await TrackPlayer.seekTo(prog.position);
+        await TrackPlayer.play();
+      } catch (e) {
+        console.warn('Shuffle rebuild error:', e);
       }
-
-      return next;
-    });
+    }
   }, []);
 
   const toggleRepeat = useCallback(() => {
     setRepeatMode(prev => {
       const modes: RepeatMode[] = ['none', 'all', 'one'];
       const next = modes[(modes.indexOf(prev) + 1) % modes.length];
-      repeatModeRef.current = next;
 
-      // expo-av handles 'one' repeat natively via isLooping
-      if (soundRef.current) {
-        soundRef.current.setIsLoopingAsync(next === 'one');
-      }
+      const tpMode =
+        next === 'one' ? TrackRepeatMode.Track :
+        next === 'all' ? TrackRepeatMode.Queue :
+        TrackRepeatMode.Off;
 
+      TrackPlayer.setRepeatMode(tpMode);
       return next;
     });
   }, []);
 
   const seekTo = useCallback(async (positionMs: number) => {
-    if (!soundRef.current) return;
-    await soundRef.current.setPositionAsync(positionMs);
+    await TrackPlayer.seekTo(positionMs / 1000);
   }, []);
 
   const setVolume = useCallback(async (v: number) => {
     const clamped = Math.min(1, Math.max(0, v));
     setVolumeState(clamped);
-    if (soundRef.current) {
-      await soundRef.current.setVolumeAsync(clamped);
-    }
+    await TrackPlayer.setVolume(clamped);
   }, []);
 
   const addToQueue = useCallback((song: Song) => {
     setQueue(prev => {
       const updated = [...prev, song];
       queueRef.current = updated;
+      TrackPlayer.add(songToTrack(song));
       return updated;
     });
   }, []);
@@ -301,6 +314,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         position,
         duration,
         isLoading,
+        volume,
         playSong,
         playQueue,
         togglePlayPause,
@@ -310,7 +324,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         toggleRepeat,
         seekTo,
         addToQueue,
-        volume,
         setVolume,
       }}
     >
