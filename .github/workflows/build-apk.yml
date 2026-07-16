@@ -51,22 +51,30 @@ jobs:
               print('Patch aplicado com sucesso')
           PYEOF
 
-      - name: Corrigir expo-document-picker para AGP 8.3+
+      - name: Corrigir expo-document-picker para AGP 8.3+ / Gradle 7+
         run: |
           python3 << 'PYEOF'
           path = 'node_modules/expo-document-picker/android/build.gradle'
           with open(path) as f:
               content = f.read()
-          if 'from components.release' not in content:
-              print('Linha não encontrada – nada a fazer')
-          else:
+          changed = False
+          # Fix 1: components.release removido no AGP 8.3+
+          if 'from components.release' in content:
               content = content.replace(
                   'from components.release',
                   'def _rc2 = project.components.findByName("release"); if (_rc2 != null) from _rc2'
               )
+              changed = True
+          # Fix 2: classifier= removido no Gradle 7+ (usar archiveClassifier)
+          if "classifier = 'sources'" in content:
+              content = content.replace("classifier = 'sources'", "archiveClassifier = 'sources'")
+              changed = True
+          if changed:
               with open(path, 'w') as f:
                   f.write(content)
-              print('Patch aplicado com sucesso')
+              print('Patches aplicados com sucesso')
+          else:
+              print('Nada a fazer')
           PYEOF
 
       - name: Gerar projeto Android nativo (expo prebuild)
