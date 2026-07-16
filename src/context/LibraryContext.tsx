@@ -6,7 +6,10 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { Alert } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 import { Playlist, RenameEntry, Song } from '../types';
 import { parseFilename, stripY2Mate } from '../utils/format';
 import { generateId, KEYS, loadJSON, saveJSON } from '../utils/storage';
@@ -47,12 +50,17 @@ interface LibraryContextType {
 
   addToRecentlyPlayed: (songId: string) => Promise<void>;
   addToPlayHistory: (songId: string) => Promise<void>;
+
+  customSongs: Song[];
+  importMusicFiles: () => Promise<void>;
+  removeCustomSong: (id: string) => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextType | null>(null);
 
 export function LibraryProvider({ children }: { children: React.ReactNode }) {
-  const [songs, setSongs] = useState<Song[]>([]);
+  const [scannedSongs, setScannedSongs] = useState<Song[]>([]);
+  const [customSongs, setCustomSongs] = useState<Song[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [renameMap, setRenameMap] = useState<Record<string, RenameEntry>>({});
   const [recentlyPlayed, setRecentlyPlayed] = useState<string[]>([]);
@@ -62,22 +70,33 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const [showAllAudio, setShowAllAudioState] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const songsRef = useRef<Song[]>([]);
+  const customSongsRef = useRef<Song[]>([]);
   const showAllAudioRef = useRef(false);
+
+  // Merged view: custom songs first (by import order), then scanned songs
+  const songs = [
+    ...customSongs,
+    ...scannedSongs.filter(s => !customSongs.some(c => c.id === s.id)),
+  ];
 
   useEffect(() => {
     songsRef.current = songs;
   }, [songs]);
+  useEffect(() => {
+    customSongsRef.current = customSongs;
+  }, [customSongs]);
 
   // Bootstrap: load stored data then scan
   useEffect(() => {
     const init = async () => {
-      const [storedPlaylists, storedRenameMap, storedRecent, storedHistory, storedShowAll, storedFavs] = await Promise.all([
+      const [storedPlaylists, storedRenameMap, storedRecent, storedHistory, storedShowAll, storedFavs, storedCustom] = await Promise.all([
         loadJSON<Playlist[]>(KEYS.PLAYLISTS, []),
         loadJSON<Record<string, RenameEntry>>(KEYS.RENAME_MAP, {}),
         loadJSON<string[]>(KEYS.RECENTLY_PLAYED, []),
         loadJSON<string[]>(KEYS.PLAY_HISTORY, []),
         loadJSON<boolean>(KEYS.SHOW_ALL_AUDIO, false),
         loadJSON<string[]>(KEYS.FAVORITES, []),
+        loadJSON<Song[]>(KEYS.CUSTOM_SONGS, []),
       ]);
       setPlaylists(storedPlaylists);
       setRenameMap(storedRenameMap);
@@ -86,6 +105,8 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       showAllAudioRef.current = storedShowAll;
       setShowAllAudioState(storedShowAll);
       setFavorites(new Set(storedFavs));
+      setCustomSongs(storedCustom);
+      customSongsRef.current = storedCustom;
       await scanLibrary();
     };
     init();
@@ -160,7 +181,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         return ac !== 0 ? ac : a.title.localeCompare(b.title);
       });
 
-      setSongs(result);
+      setScannedSongs(result);
     } catch (e) {
       console.warn('Scan error:', e);
     } finally {
@@ -377,6 +398,81 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     });
   }, [renameMap]);
 
+  // --- Custom imported files ---
+
+  const IMPORT_DIR = `${FileSystem.documentDirectory}imported_music/`;
+
+  const importMusicFiles = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'audio/*',
+        multiple: true,
+        copyToCacheDirectory: false,
+      });
+
+      if (result.canceled || result.assets.length === 0) return;
+
+      await FileSystem.makeDirectoryAsync(IMPORT_DIR, { intermediates: true });
+
+      const existing = new Set(customSongsRef.current.map(s => s.filename));
+      const newSongs: Song[] = [];
+      let skipped = 0;
+
+      for (const asset of result.assets) {
+        const filename = asset.name ?? asset.uri.split('/').pop() ?? `audio_${Date.now()}`;
+
+        if (existing.has(filename)) {
+          skipped++;
+          continue;
+        }
+
+        const destUri = `${IMPORT_DIR}${Date.now()}_${filename}`;
+        await FileSystem.copyAsync({ from: asset.uri, to: destUri });
+
+        const parsed = parseFilename(filename);
+        newSongs.push({
+          id: generateId(),
+          filename,
+          uri: destUri,
+          title: stripY2Mate(parsed.title),
+          artist: parsed.artist,
+          album: 'Importado',
+          duration: 0,
+        });
+        existing.add(filename);
+      }
+
+      if (newSongs.length === 0) {
+        Alert.alert('Sem novidades', skipped > 0 ? `${skipped} ficheiro(s) já estavam importados.` : 'Nenhum ficheiro novo.');
+        return;
+      }
+
+      const updated = [...customSongsRef.current, ...newSongs];
+      setCustomSongs(updated);
+      customSongsRef.current = updated;
+      await saveJSON(KEYS.CUSTOM_SONGS, updated);
+
+      const msg = skipped > 0
+        ? `${newSongs.length} ficheiro(s) importados. ${skipped} já existiam.`
+        : `${newSongs.length} ficheiro(s) importados com sucesso.`;
+      Alert.alert('Importação concluída', msg);
+    } catch (e) {
+      console.warn('Import error:', e);
+      Alert.alert('Erro', 'Não foi possível importar os ficheiros. Tenta novamente.');
+    }
+  }, []);
+
+  const removeCustomSong = useCallback(async (id: string) => {
+    const song = customSongsRef.current.find(s => s.id === id);
+    if (song) {
+      await FileSystem.deleteAsync(song.uri, { idempotent: true });
+    }
+    const updated = customSongsRef.current.filter(s => s.id !== id);
+    setCustomSongs(updated);
+    customSongsRef.current = updated;
+    await saveJSON(KEYS.CUSTOM_SONGS, updated);
+  }, []);
+
   // --- History ---
 
   const addToRecentlyPlayed = useCallback(
@@ -429,6 +525,9 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         getSongsNeedingRename,
         addToRecentlyPlayed,
         addToPlayHistory,
+        customSongs,
+        importMusicFiles,
+        removeCustomSong,
       }}
     >
       {children}

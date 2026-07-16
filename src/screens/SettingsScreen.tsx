@@ -9,6 +9,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,11 +17,14 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useLibrary } from '../context/LibraryContext';
 import ArtworkPlaceholder from '../components/ArtworkPlaceholder';
-import { buildCleanFilename } from '../utils/format';
+import { buildCleanFilename, formatDuration } from '../utils/format';
 import { RootStackParamList, Song } from '../types';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+type Section = 'main' | 'rename' | 'sources';
+
+const AUDIO_FORMATS = 'MP3 · FLAC · AAC · M4A · OGG · WAV · OPUS · WMA · AMR';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -36,9 +40,13 @@ export default function SettingsScreen() {
     playlists,
     showAllAudio,
     setShowAllAudio,
+    customSongs,
+    importMusicFiles,
+    removeCustomSong,
   } = useLibrary();
 
-  const [activeSection, setActiveSection] = useState<'main' | 'rename'>('main');
+  const [activeSection, setActiveSection] = useState<Section>('main');
+  const [importing, setImporting] = useState(false);
   const [editingSong, setEditingSong] = useState<Song | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editArtist, setEditArtist] = useState('');
@@ -78,6 +86,92 @@ export default function SettingsScreen() {
     await scanLibrary();
     Alert.alert('Concluído', 'Biblioteca atualizada.');
   };
+
+  const handleImport = async () => {
+    setImporting(true);
+    try {
+      await importMusicFiles();
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleRemoveCustom = (song: Song) => {
+    Alert.alert(
+      'Remover ficheiro',
+      `Remover "${song.title}" da biblioteca?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Remover', style: 'destructive', onPress: () => removeCustomSong(song.id) },
+      ]
+    );
+  };
+
+  if (activeSection === 'sources') {
+    return (
+      <View style={[styles.root, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => setActiveSection('main')}>
+            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Ficheiros Importados</Text>
+          <TouchableOpacity onPress={handleImport} disabled={importing}>
+            {importing
+              ? <ActivityIndicator size="small" color={COLORS.primary} />
+              : <Ionicons name="add" size={26} color={COLORS.primary} />
+            }
+          </TouchableOpacity>
+        </View>
+
+        {customSongs.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="cloud-download-outline" size={56} color={COLORS.textTertiary} />
+            <Text style={styles.emptyTitle}>Nenhum ficheiro importado</Text>
+            <Text style={styles.emptySubtitle}>
+              Usa o botão + para importar músicas do Google Drive, OneDrive, armazenamento local, etc.
+            </Text>
+            <Text style={styles.formatsLabel}>{AUDIO_FORMATS}</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={customSongs}
+            keyExtractor={s => s.id}
+            renderItem={({ item }) => {
+              const { title, artist } = getDisplayInfo(item);
+              return (
+                <View style={styles.importedRow}>
+                  <ArtworkPlaceholder title={title} artist={artist} size={44} />
+                  <View style={styles.renameInfo}>
+                    <Text style={styles.renameTitle} numberOfLines={1}>{title}</Text>
+                    <Text style={styles.renameArtist} numberOfLines={1}>
+                      {artist}{item.duration > 0 ? ` · ${formatDuration(item.duration)}` : ''}
+                    </Text>
+                    <Text style={styles.renameFilename} numberOfLines={1}>{item.filename}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleRemoveCustom(item)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="trash-outline" size={20} color={COLORS.error} />
+                  </TouchableOpacity>
+                </View>
+              );
+            }}
+            ListHeaderComponent={
+              <View style={styles.sourcesHeader}>
+                <Text style={styles.sourcesHeaderText}>
+                  {customSongs.length} ficheiro(s) importado(s)
+                </Text>
+                <Text style={styles.formatsLabel}>{AUDIO_FORMATS}</Text>
+              </View>
+            }
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 120 }}
+          />
+        )}
+      </View>
+    );
+  }
 
   if (editingSong) {
     return (
@@ -234,6 +328,27 @@ export default function SettingsScreen() {
           value={showAllAudio}
           onToggle={setShowAllAudio}
         />
+      </SectionBlock>
+
+      <SectionBlock title="Fontes de Música">
+        <SettingRow
+          icon="cloud-download"
+          label="Importar ficheiros de áudio"
+          subtitle={`Google Drive, OneDrive, armazenamento local e mais`}
+          onPress={handleImport}
+          badge={importing ? undefined : undefined}
+        />
+        <SettingRow
+          icon="folder-open"
+          label="Gerir ficheiros importados"
+          subtitle={customSongs.length > 0 ? `${customSongs.length} ficheiro(s) importado(s)` : 'Nenhum ficheiro importado ainda'}
+          onPress={() => setActiveSection('sources')}
+          badge={customSongs.length > 0 ? customSongs.length : undefined}
+        />
+        <View style={styles.formatsRow}>
+          <Ionicons name="musical-notes" size={14} color={COLORS.textTertiary} />
+          <Text style={styles.formatsInline}>Formatos: {AUDIO_FORMATS}</Text>
+        </View>
       </SectionBlock>
 
       <SectionBlock title="Sobre">
@@ -443,6 +558,64 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     fontWeight: '600',
     marginTop: SPACING.xs,
+  },
+  // Sources section
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.xl,
+    gap: SPACING.sm,
+  },
+  emptyTitle: {
+    color: COLORS.text,
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    marginTop: SPACING.sm,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.sm,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  formatsLabel: {
+    color: COLORS.textTertiary,
+    fontSize: FONT_SIZES.xs,
+    textAlign: 'center',
+    marginTop: SPACING.xs,
+    letterSpacing: 0.5,
+  },
+  sourcesHeader: {
+    padding: SPACING.md,
+    gap: SPACING.xs,
+  },
+  sourcesHeaderText: {
+    color: COLORS.primary,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+  },
+  importedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    gap: SPACING.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.border,
+  },
+  formatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  formatsInline: {
+    color: COLORS.textTertiary,
+    fontSize: FONT_SIZES.xs,
+    flex: 1,
   },
   // Rename section
   renameHeader: {

@@ -8,6 +8,7 @@ const KEYS = {
   SETTINGS: '@pdb:settings',
   SHOW_ALL_AUDIO: '@pdb:showAllAudio',
   FAVORITES: '@pdb:favorites',
+  CUSTOM_SONGS: '@pdb:customSongs',
 };
 
 export { KEYS };
