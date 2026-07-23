@@ -34,7 +34,7 @@
         "android.permission.WAKE_LOCK"
       ]
     },
-    "owner": "dianazs-team",
+    "owner": "dianaz",
     "extra": {
       "eas": {
         "projectId": "d1069bb7-3a1a-4ce5-b50f-392a4d7778bc"
