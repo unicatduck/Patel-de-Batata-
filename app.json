@@ -25,6 +25,7 @@
         "backgroundColor": "#F5C118"
       },
       "package": "com.pateldebatata.app",
+      "minSdkVersion": 24,
       "permissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_AUDIO",
