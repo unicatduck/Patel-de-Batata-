@@ -1,0 +1,22 @@
+diff --git a/node_modules/expo-document-picker/android/build.gradle b/node_modules/expo-document-picker/android/build.gradle
+index b00456b..dd6f3a8 100644
+--- a/node_modules/expo-document-picker/android/build.gradle
++++ b/node_modules/expo-document-picker/android/build.gradle
+@@ -37,7 +37,7 @@ buildscript {
+ 
+ // Creating sources with comments
+ task androidSourcesJar(type: Jar) {
+-  classifier = 'sources'
++  archiveClassifier = 'sources'
+   from android.sourceSets.main.java.srcDirs
+ }
+ 
+@@ -45,7 +45,7 @@ afterEvaluate {
+   publishing {
+     publications {
+       release(MavenPublication) {
+-        from components.release
++        from components.findByName("release")
+         // Add additional sourcesJar to artifacts
+         artifact(androidSourcesJar)
+       }
