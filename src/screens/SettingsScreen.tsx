@@ -351,6 +351,21 @@ export default function SettingsScreen() {
         </View>
       </SectionBlock>
 
+      <SectionBlock title="Perfil">
+        <SettingRow
+          icon="person-circle"
+          label="Conta"
+          subtitle="Cria ou edita o teu perfil local"
+          onPress={() => navigation.navigate('Account')}
+        />
+        <SettingRow
+          icon="shield-checkmark"
+          label="Segurança"
+          subtitle="PIN e autenticação biométrica"
+          onPress={() => navigation.navigate('Security')}
+        />
+      </SectionBlock>
+
       <SectionBlock title="Sobre">
         <View style={styles.aboutBox}>
           <Text style={styles.appName}>🥔 Patel de Batata</Text>

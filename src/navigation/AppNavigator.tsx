@@ -11,6 +11,8 @@ import PlayerScreen from '../screens/PlayerScreen';
 import PlaylistDetailScreen from '../screens/PlaylistDetailScreen';
 import ArtistScreen from '../screens/ArtistScreen';
 import CreatePlaylistScreen from '../screens/CreatePlaylistScreen';
+import AccountScreen from '../screens/AccountScreen';
+import SecurityScreen from '../screens/SecurityScreen';
 import MiniPlayer from '../components/MiniPlayer';
 import { BottomTabParamList, RootStackParamList } from '../types';
 import { COLORS, FONT_SIZES } from '../theme';
@@ -82,6 +84,8 @@ export default function AppNavigator() {
         component={CreatePlaylistScreen}
         options={{ presentation: 'modal' }}
       />
+      <Stack.Screen name="Account" component={AccountScreen} />
+      <Stack.Screen name="Security" component={SecurityScreen} />
     </Stack.Navigator>
   );
 }

@@ -54,6 +54,7 @@ interface LibraryContextType {
   customSongs: Song[];
   importMusicFiles: () => Promise<void>;
   removeCustomSong: (id: string) => Promise<void>;
+  removeSongFromLibrary: (id: string) => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextType | null>(null);
@@ -69,15 +70,17 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [showAllAudio, setShowAllAudioState] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [hiddenSongs, setHiddenSongs] = useState<Set<string>>(new Set());
   const songsRef = useRef<Song[]>([]);
   const customSongsRef = useRef<Song[]>([]);
   const showAllAudioRef = useRef(false);
+  const hiddenSongsRef = useRef<Set<string>>(new Set());
 
-  // Merged view: custom songs first (by import order), then scanned songs
+  // Merged view: custom songs first (by import order), then scanned songs; hidden songs excluded
   const songs = [
     ...customSongs,
     ...scannedSongs.filter(s => !customSongs.some(c => c.id === s.id)),
-  ];
+  ].filter(s => !hiddenSongs.has(s.id));
 
   useEffect(() => {
     songsRef.current = songs;
@@ -85,11 +88,14 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     customSongsRef.current = customSongs;
   }, [customSongs]);
+  useEffect(() => {
+    hiddenSongsRef.current = hiddenSongs;
+  }, [hiddenSongs]);
 
   // Bootstrap: load stored data then scan
   useEffect(() => {
     const init = async () => {
-      const [storedPlaylists, storedRenameMap, storedRecent, storedHistory, storedShowAll, storedFavs, storedCustom] = await Promise.all([
+      const [storedPlaylists, storedRenameMap, storedRecent, storedHistory, storedShowAll, storedFavs, storedCustom, storedHidden] = await Promise.all([
         loadJSON<Playlist[]>(KEYS.PLAYLISTS, []),
         loadJSON<Record<string, RenameEntry>>(KEYS.RENAME_MAP, {}),
         loadJSON<string[]>(KEYS.RECENTLY_PLAYED, []),
@@ -97,6 +103,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         loadJSON<boolean>(KEYS.SHOW_ALL_AUDIO, false),
         loadJSON<string[]>(KEYS.FAVORITES, []),
         loadJSON<Song[]>(KEYS.CUSTOM_SONGS, []),
+        loadJSON<string[]>(KEYS.HIDDEN_SONGS, []),
       ]);
       setPlaylists(storedPlaylists);
       setRenameMap(storedRenameMap);
@@ -107,6 +114,9 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       setFavorites(new Set(storedFavs));
       setCustomSongs(storedCustom);
       customSongsRef.current = storedCustom;
+      const hiddenSet = new Set(storedHidden);
+      setHiddenSongs(hiddenSet);
+      hiddenSongsRef.current = hiddenSet;
       await scanLibrary();
     };
     init();
@@ -335,38 +345,42 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   );
 
   /**
-   * Creates one auto-playlist per artist (skipping artists that already have one).
+   * Creates or updates one auto-playlist per artist with all current songs.
    */
   const createArtistPlaylists = useCallback(async () => {
     const artists = getArtists();
-    const existing = new Set(
-      playlists
-        .filter(p => p.isAutoPlaylist && p.autoType === 'artist')
-        .map(p => p.autoValue)
-    );
-
-    const newPlaylists: Playlist[] = [];
     const now = Date.now();
 
+    const existingByArtist = new Map(
+      playlists
+        .filter(p => p.isAutoPlaylist && p.autoType === 'artist' && p.autoValue)
+        .map(p => [p.autoValue as string, p])
+    );
+
+    const kept = playlists.filter(p => !(p.isAutoPlaylist && p.autoType === 'artist'));
+    const updated: Playlist[] = [];
+
     for (const artist of artists) {
-      if (existing.has(artist)) continue;
       const artistSongs = getSongsByArtist(artist);
       if (artistSongs.length === 0) continue;
-      newPlaylists.push({
-        id: generateId(),
-        name: artist,
-        songIds: artistSongs.map(s => s.id),
-        isAutoPlaylist: true,
-        autoType: 'artist',
-        autoValue: artist,
-        createdAt: now,
-        updatedAt: now,
-      });
+      const existing = existingByArtist.get(artist);
+      if (existing) {
+        updated.push({ ...existing, songIds: artistSongs.map(s => s.id), updatedAt: now });
+      } else {
+        updated.push({
+          id: generateId(),
+          name: artist,
+          songIds: artistSongs.map(s => s.id),
+          isAutoPlaylist: true,
+          autoType: 'artist',
+          autoValue: artist,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
     }
 
-    if (newPlaylists.length > 0) {
-      await savePlaylists([...playlists, ...newPlaylists]);
-    }
+    await savePlaylists([...kept, ...updated]);
   }, [getArtists, getSongsByArtist, playlists, savePlaylists]);
 
   // --- Rename ---
@@ -473,6 +487,18 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     await saveJSON(KEYS.CUSTOM_SONGS, updated);
   }, []);
 
+  const removeSongFromLibrary = useCallback(async (id: string) => {
+    if (customSongsRef.current.some(s => s.id === id)) {
+      await removeCustomSong(id);
+    } else {
+      const next = new Set(hiddenSongsRef.current);
+      next.add(id);
+      setHiddenSongs(next);
+      hiddenSongsRef.current = next;
+      await saveJSON(KEYS.HIDDEN_SONGS, Array.from(next));
+    }
+  }, [removeCustomSong]);
+
   // --- History ---
 
   const addToRecentlyPlayed = useCallback(
@@ -528,6 +554,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         customSongs,
         importMusicFiles,
         removeCustomSong,
+        removeSongFromLibrary,
       }}
     >
       {children}

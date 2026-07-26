@@ -16,7 +16,8 @@
       "bundleIdentifier": "com.pateldebatata.app",
       "infoPlist": {
         "UIBackgroundModes": ["audio"],
-        "NSAppleMusicUsageDescription": "Patel de Batata precisa de acesso à biblioteca de música para reproduzir as tuas músicas."
+        "NSAppleMusicUsageDescription": "Patel de Batata precisa de acesso à biblioteca de música para reproduzir as tuas músicas.",
+        "NSFaceIDUsageDescription": "Patel de Batata usa o Face ID para proteger o acesso à app."
       }
     },
     "android": {

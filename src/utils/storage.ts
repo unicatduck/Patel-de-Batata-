@@ -9,6 +9,7 @@ const KEYS = {
   SHOW_ALL_AUDIO: '@pdb:showAllAudio',
   FAVORITES: '@pdb:favorites',
   CUSTOM_SONGS: '@pdb:customSongs',
+  HIDDEN_SONGS: '@pdb:hiddenSongs',
 };
 
 export { KEYS };

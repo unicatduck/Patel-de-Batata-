@@ -48,6 +48,8 @@ export type RootStackParamList = {
   ArtistDetail: { artist: string };
   CreatePlaylist: { initialSongIds?: string[] };
   RenameScreen: { songId: string };
+  Account: undefined;
+  Security: undefined;
 };
 
 export type BottomTabParamList = {

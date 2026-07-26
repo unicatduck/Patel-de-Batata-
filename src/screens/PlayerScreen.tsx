@@ -1,5 +1,6 @@
 import React, { useCallback, useRef } from 'react';
 import {
+  Alert,
   Image,
   LayoutChangeEvent,
   StyleSheet,
@@ -52,7 +53,7 @@ export default function PlayerScreen() {
     seekTo,
     setVolume,
   } = usePlayer();
-  const { getDisplayInfo, isFavorite, toggleFavorite } = useLibrary();
+  const { getDisplayInfo, isFavorite, toggleFavorite, removeSongFromLibrary } = useLibrary();
 
   const { title, artist } = currentSong
     ? getDisplayInfo(currentSong)
@@ -66,6 +67,38 @@ export default function PlayerScreen() {
     (pct: number) => seekTo(Math.floor(pct * duration)),
     [duration, seekTo]
   );
+
+  const handleOptions = useCallback(() => {
+    if (!currentSong) return;
+    Alert.alert(
+      title,
+      artist,
+      [
+        {
+          text: 'Eliminar da biblioteca',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Eliminar música',
+              `Remover "${title}" da biblioteca? Esta ação não pode ser desfeita.`,
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                  text: 'Eliminar',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await removeSongFromLibrary(currentSong.id);
+                    playNext();
+                  },
+                },
+              ]
+            );
+          },
+        },
+        { text: 'Cancelar', style: 'cancel' },
+      ]
+    );
+  }, [currentSong, title, artist, removeSongFromLibrary, playNext]);
 
   if (!currentSong) {
     return (
@@ -94,17 +127,24 @@ export default function PlayerScreen() {
           <Text style={styles.headerSub}>A TOCAR</Text>
           <Text style={styles.headerArtist} numberOfLines={1}>{artist}</Text>
         </View>
-        <TouchableOpacity
-          onPress={() => currentSong && toggleFavorite(currentSong.id)}
-          style={styles.headerBtn}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons
-            name={isFav ? 'heart' : 'heart-outline'}
-            size={24}
-            color={isFav ? '#FF4D6D' : COLORS.text}
-          />
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            onPress={() => currentSong && toggleFavorite(currentSong.id)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons
+              name={isFav ? 'heart' : 'heart-outline'}
+              size={24}
+              color={isFav ? '#FF4D6D' : COLORS.text}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleOptions}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="ellipsis-vertical" size={22} color={COLORS.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Duck artwork */}
@@ -254,6 +294,13 @@ const styles = StyleSheet.create({
   headerBtn: {
     width: 40,
     alignItems: 'center',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    width: 64,
+    justifyContent: 'flex-end',
   },
   headerCenter: {
     flex: 1,
