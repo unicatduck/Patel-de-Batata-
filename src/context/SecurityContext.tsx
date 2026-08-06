@@ -14,6 +14,7 @@ interface SecurityContextType {
   setupPin: (pin: string) => Promise<void>;
   enableBiometric: () => Promise<boolean>;
   disableSecurity: () => Promise<void>;
+  disableBiometric: () => Promise<void>;
   verifyPin: (pin: string) => Promise<boolean>;
   changePin: (oldPin: string, newPin: string) => Promise<boolean>;
 }
@@ -40,12 +41,13 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const init = async () => {
-      const [hasHw, supportedTypes] = await Promise.all([
+      const [hasHw, supportedTypes, enrolled] = await Promise.all([
         LocalAuthentication.hasHardwareAsync(),
         LocalAuthentication.supportedAuthenticationTypesAsync(),
+        LocalAuthentication.isEnrolledAsync(),
       ]);
 
-      const available = hasHw && supportedTypes.length > 0;
+      const available = hasHw && supportedTypes.length > 0 && enrolled;
       setBiometricAvailable(available);
 
       if (supportedTypes.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
@@ -74,7 +76,9 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
       return true;
     }
 
-    if (securityMode === 'biometric' || securityMode === 'both') {
+    // Only trigger biometric when no PIN was explicitly provided.
+    // When the user types their PIN, skip the biometric prompt entirely.
+    if (!pin && (securityMode === 'biometric' || securityMode === 'both')) {
       try {
         const result = await LocalAuthentication.authenticateAsync({
           promptMessage: 'Desbloqueia o Patel de Batata',
@@ -141,6 +145,21 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
     setIsLocked(false);
   }, []);
 
+  const disableBiometric = useCallback(async () => {
+    if (securityMode === 'both') {
+      // Keep PIN hash, just switch mode to pin-only
+      await SecureStore.setItemAsync(SECURITY_MODE_KEY, 'pin');
+      setSecurityMode('pin');
+    } else if (securityMode === 'biometric') {
+      await Promise.all([
+        SecureStore.deleteItemAsync(SECURITY_MODE_KEY),
+        SecureStore.deleteItemAsync(PIN_HASH_KEY),
+      ]);
+      setSecurityMode('none');
+      setIsLocked(false);
+    }
+  }, [securityMode]);
+
   const changePin = useCallback(async (oldPin: string, newPin: string): Promise<boolean> => {
     const valid = await verifyPin(oldPin);
     if (!valid) return false;
@@ -151,7 +170,7 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
   return (
     <SecurityContext.Provider value={{
       isLocked, securityMode, biometricAvailable, biometricType,
-      unlock, lock, setupPin, enableBiometric, disableSecurity, verifyPin, changePin,
+      unlock, lock, setupPin, enableBiometric, disableSecurity, disableBiometric, verifyPin, changePin,
     }}>
       {children}
     </SecurityContext.Provider>

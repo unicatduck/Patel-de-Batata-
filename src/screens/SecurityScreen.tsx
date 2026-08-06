@@ -22,7 +22,7 @@ export default function SecurityScreen() {
   const navigation = useNavigation();
   const {
     securityMode, biometricAvailable, biometricType,
-    setupPin, enableBiometric, disableSecurity, changePin,
+    setupPin, enableBiometric, disableSecurity, disableBiometric, changePin,
   } = useSecurity();
 
   const [view, setView] = useState<SubView>('main');
@@ -47,8 +47,7 @@ export default function SecurityScreen() {
     setLoading(true);
     await setupPin(pin1);
     setLoading(false);
-    setPin1('');
-    setPin2('');
+    setPin1(''); setPin2('');
     setView('main');
     Alert.alert('PIN ativado', 'O teu PIN foi configurado com sucesso.');
   };
@@ -80,9 +79,7 @@ export default function SecurityScreen() {
           {
             text: 'Desativar',
             style: 'destructive',
-            onPress: async () => {
-              if (securityMode === 'biometric') await disableSecurity();
-            },
+            onPress: () => disableBiometric(),
           },
         ]
       );
@@ -230,7 +227,7 @@ export default function SecurityScreen() {
 
         {isSecurityActive && (
           <SectionBlock title="Remover">
-            <TouchableOpacity style={[styles.row, styles.destructiveRow]} onPress={handleDisableAll}>
+            <TouchableOpacity style={styles.row} onPress={handleDisableAll}>
               <View style={styles.rowIcon}>
                 <Ionicons name="trash-outline" size={20} color={COLORS.error} />
               </View>
@@ -302,7 +299,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
     gap: SPACING.sm,
   },
-  destructiveRow: {},
   rowIcon: {
     width: 36, height: 36, borderRadius: RADIUS.sm,
     backgroundColor: 'rgba(245,166,35,0.12)', alignItems: 'center', justifyContent: 'center',

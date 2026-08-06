@@ -24,6 +24,7 @@ export default function LockScreen() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const shakeAnim = useRef(new Animated.Value(0)).current;
+  const isSubmitting = useRef(false);
 
   const shake = useCallback(() => {
     Vibration.vibrate(200);
@@ -55,12 +56,16 @@ export default function LockScreen() {
       return;
     }
     if (d === '') return;
+    if (isSubmitting.current) return;
 
     const next = pin + d;
+    if (next.length > PIN_LENGTH) return;
     setPin(next);
 
     if (next.length === PIN_LENGTH) {
+      isSubmitting.current = true;
       const ok = await unlock(next);
+      isSubmitting.current = false;
       if (!ok) {
         shake();
         setError('PIN incorreto. Tenta novamente.');
@@ -102,7 +107,7 @@ export default function LockScreen() {
                 key={i}
                 style={[styles.key, d === '' && styles.keyEmpty]}
                 onPress={() => d !== '' && handleDigit(d)}
-                disabled={d === '' || pin.length >= PIN_LENGTH}
+                disabled={d === ''}
                 activeOpacity={0.6}
               >
                 {d === '⌫'
@@ -148,9 +153,7 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     marginTop: SPACING.xs,
   },
-  profileEmoji: {
-    fontSize: 24,
-  },
+  profileEmoji: { fontSize: 24 },
   profileName: {
     color: COLORS.text,
     fontSize: FONT_SIZES.md,
@@ -174,9 +177,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     backgroundColor: 'transparent',
   },
-  dotFilled: {
-    backgroundColor: COLORS.primary,
-  },
+  dotFilled: { backgroundColor: COLORS.primary },
   errorText: {
     color: COLORS.error,
     fontSize: FONT_SIZES.sm,
@@ -198,9 +199,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  keyEmpty: {
-    backgroundColor: 'transparent',
-  },
+  keyEmpty: { backgroundColor: 'transparent' },
   keyText: {
     color: COLORS.text,
     fontSize: FONT_SIZES.xxl,
