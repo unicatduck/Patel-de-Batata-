@@ -7,12 +7,14 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth, AVATAR_EMOJIS } from '../context/AuthContext';
 import { useLibrary } from '../context/LibraryContext';
+import { useGoogleAuth } from '../context/GoogleAuthContext';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '../theme';
 
 type SubView = 'main' | 'create' | 'edit';
@@ -22,6 +24,7 @@ export default function AccountScreen() {
   const navigation = useNavigation();
   const { profile, createProfile, updateProfile, deleteProfile } = useAuth();
   const { songs, playlists, favorites } = useLibrary();
+  const { googleUser, isSigningIn, isConfigured, signIn, signOut } = useGoogleAuth();
 
   const [view, setView] = useState<SubView>('main');
   const [name, setName] = useState('');
@@ -145,12 +148,13 @@ export default function AccountScreen() {
             <Text style={styles.createBtnText}>Criar Perfil</Text>
           </TouchableOpacity>
 
-          <View style={styles.googleNote}>
-            <Ionicons name="logo-google" size={18} color={COLORS.textTertiary} />
-            <Text style={styles.googleNoteText}>
-              Início de sessão com Google disponível em breve
-            </Text>
-          </View>
+          <GoogleSection
+            googleUser={googleUser}
+            isSigningIn={isSigningIn}
+            isConfigured={isConfigured}
+            signIn={signIn}
+            signOut={signOut}
+          />
         </View>
       </View>
     );
@@ -189,8 +193,80 @@ export default function AccountScreen() {
             As tuas músicas, playlists e preferências são guardadas localmente neste dispositivo.
           </Text>
         </View>
+
+        <View style={styles.googleSection}>
+          <Text style={styles.googleSectionTitle}>Google</Text>
+          <GoogleSection
+            googleUser={googleUser}
+            isSigningIn={isSigningIn}
+            isConfigured={isConfigured}
+            signIn={signIn}
+            signOut={signOut}
+          />
+        </View>
       </ScrollView>
     </View>
+  );
+}
+
+function GoogleSection({
+  googleUser,
+  isSigningIn,
+  isConfigured,
+  signIn,
+  signOut,
+}: {
+  googleUser: { name: string; email: string; picture?: string } | null;
+  isSigningIn: boolean;
+  isConfigured: boolean;
+  signIn: () => void;
+  signOut: () => void;
+}) {
+  if (!isConfigured) {
+    return (
+      <View style={styles.googleNote}>
+        <Ionicons name="logo-google" size={18} color={COLORS.textTertiary} />
+        <Text style={styles.googleNoteText}>
+          Google Sign-In não configurado. Adiciona os IDs de cliente em src/config/google.ts.
+        </Text>
+      </View>
+    );
+  }
+
+  if (googleUser) {
+    return (
+      <View style={styles.googleCard}>
+        <View style={styles.googleUserRow}>
+          <View style={styles.googleAvatar}>
+            <Text style={styles.googleAvatarText}>{googleUser.name[0]?.toUpperCase()}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.googleName}>{googleUser.name}</Text>
+            <Text style={styles.googleEmail}>{googleUser.email}</Text>
+          </View>
+        </View>
+        <TouchableOpacity style={styles.googleSignOutBtn} onPress={signOut}>
+          <Ionicons name="log-out-outline" size={16} color={COLORS.error} />
+          <Text style={styles.googleSignOutText}>Terminar sessão Google</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <TouchableOpacity
+      style={styles.googleSignInBtn}
+      onPress={signIn}
+      disabled={isSigningIn}
+    >
+      {isSigningIn
+        ? <ActivityIndicator size="small" color={COLORS.background} />
+        : <Ionicons name="logo-google" size={18} color={COLORS.background} />
+      }
+      <Text style={styles.googleSignInText}>
+        {isSigningIn ? 'A iniciar sessão…' : 'Iniciar sessão com Google'}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
@@ -230,8 +306,42 @@ const styles = StyleSheet.create({
   createBtnText: { color: COLORS.background, fontWeight: '700', fontSize: FONT_SIZES.base },
   googleNote: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, marginTop: SPACING.md,
+    paddingHorizontal: SPACING.sm,
   },
-  googleNoteText: { color: COLORS.textTertiary, fontSize: FONT_SIZES.xs },
+  googleNoteText: { color: COLORS.textTertiary, fontSize: FONT_SIZES.xs, flex: 1 },
+  googleSection: {
+    marginHorizontal: SPACING.md, marginBottom: SPACING.md,
+  },
+  googleSectionTitle: {
+    color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, fontWeight: '700',
+    letterSpacing: 1, textTransform: 'uppercase', marginBottom: SPACING.xs,
+  },
+  googleCard: {
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: COLORS.border, padding: SPACING.md, gap: SPACING.sm,
+  },
+  googleUserRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+  },
+  googleAvatar: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  googleAvatarText: { color: COLORS.background, fontWeight: '700', fontSize: FONT_SIZES.md },
+  googleName: { color: COLORS.text, fontWeight: '600', fontSize: FONT_SIZES.base },
+  googleEmail: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs },
+  googleSignOutBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.xs,
+    paddingTop: SPACING.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border,
+  },
+  googleSignOutText: { color: COLORS.error, fontSize: FONT_SIZES.sm },
+  googleSignInBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: '#4285F4', borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.xl, paddingVertical: SPACING.md, marginTop: SPACING.sm,
+    justifyContent: 'center',
+  },
+  googleSignInText: { color: COLORS.background, fontWeight: '700', fontSize: FONT_SIZES.base },
   profileCard: {
     alignItems: 'center', padding: SPACING.xl, gap: SPACING.sm,
   },

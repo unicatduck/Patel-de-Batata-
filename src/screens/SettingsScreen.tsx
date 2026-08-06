@@ -16,6 +16,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useLibrary } from '../context/LibraryContext';
+import { useGoogleAuth } from '../context/GoogleAuthContext';
+import { listDriveAudioFiles } from '../services/GoogleDriveService';
 import ArtworkPlaceholder from '../components/ArtworkPlaceholder';
 import { buildCleanFilename, formatDuration } from '../utils/format';
 import { RootStackParamList, Song } from '../types';
@@ -43,7 +45,10 @@ export default function SettingsScreen() {
     customSongs,
     importMusicFiles,
     removeCustomSong,
+    importFromGoogleDrive,
   } = useLibrary();
+
+  const { googleUser, accessToken } = useGoogleAuth();
 
   const [activeSection, setActiveSection] = useState<Section>('main');
   const [importing, setImporting] = useState(false);
@@ -93,6 +98,38 @@ export default function SettingsScreen() {
       await importMusicFiles();
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleDriveImport = async () => {
+    if (!accessToken) return;
+    setImporting(true);
+    try {
+      const files = await listDriveAudioFiles(accessToken);
+      setImporting(false);
+      if (files.length === 0) {
+        Alert.alert('Google Drive', 'Nenhuma música encontrada no teu Drive.');
+        return;
+      }
+      Alert.alert(
+        'Google Drive',
+        `${files.length} música(s) encontrada(s). Importar todas?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Importar Todas',
+            onPress: async () => {
+              setImporting(true);
+              await importFromGoogleDrive(accessToken, files);
+              setImporting(false);
+              Alert.alert('Concluído', `${files.length} música(s) importada(s) do Google Drive.`);
+            },
+          },
+        ],
+      );
+    } catch {
+      setImporting(false);
+      Alert.alert('Erro', 'Não foi possível listar músicas do Drive. Verifica a ligação.');
     }
   };
 
@@ -334,10 +371,19 @@ export default function SettingsScreen() {
         <SettingRow
           icon="cloud-download"
           label="Importar ficheiros de áudio"
-          subtitle={`Google Drive, OneDrive, armazenamento local e mais`}
+          subtitle="Google Drive, OneDrive, armazenamento local e mais"
           onPress={handleImport}
-          badge={importing ? undefined : undefined}
+          loading={importing}
         />
+        {googleUser && accessToken && (
+          <SettingRow
+            icon="logo-google"
+            label="Importar do Google Drive"
+            subtitle={importing ? 'A importar…' : 'Importa todas as músicas do teu Drive de uma vez'}
+            onPress={handleDriveImport}
+            loading={importing}
+          />
+        )}
         <SettingRow
           icon="folder-open"
           label="Gerir ficheiros importados"
@@ -395,15 +441,17 @@ function SettingRow({
   subtitle,
   onPress,
   badge,
+  loading,
 }: {
   icon: any;
   label: string;
   subtitle?: string;
   onPress: () => void;
   badge?: number;
+  loading?: boolean;
 }) {
   return (
-    <TouchableOpacity style={styles.settingRow} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={styles.settingRow} onPress={onPress} activeOpacity={0.7} disabled={loading}>
       <View style={styles.settingIcon}>
         <Ionicons name={icon} size={20} color={COLORS.primary} />
       </View>
@@ -411,12 +459,16 @@ function SettingRow({
         <Text style={styles.settingLabel}>{label}</Text>
         {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
       </View>
-      {badge != null && badge > 0 && (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{badge}</Text>
-        </View>
-      )}
-      <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
+      {loading
+        ? <ActivityIndicator size="small" color={COLORS.primary} />
+        : badge != null && badge > 0
+          ? (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{badge}</Text>
+            </View>
+          )
+          : <Ionicons name="chevron-forward" size={18} color={COLORS.textTertiary} />
+      }
     </TouchableOpacity>
   );
 }
